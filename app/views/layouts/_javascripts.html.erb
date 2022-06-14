@@ -86,7 +86,7 @@
       }
     <% end %>
 
-    $j(document).ready(function() {
+<!--     $j(document).ready(function() {
       <% if current_user %>
         <% # Users who haven't accepted this TOS need the popup. %>
         $j("body").prepend("<%= escape_javascript(render "layouts/tos_prompt") %>");
@@ -102,7 +102,7 @@
           $j("body").prepend("<%= escape_javascript(render "layouts/tos_prompt") %>");
         }
       <% end %>
-    });
+    }); -->
   <% end %>
 <% end %>
 
