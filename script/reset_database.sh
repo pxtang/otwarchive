@@ -18,7 +18,7 @@ bundle exec rake db:migrate
 if [ "${RAILS_ENV}" = "test" ] ; then
   exit 0
 fi
-bundle exec rake db:otwseed
+# bundle exec rake db:otwseed
 
 bundle exec rake work:missing_stat_counters
 bundle exec rake skins:load_site_skins
