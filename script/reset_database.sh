@@ -20,6 +20,8 @@ if [ "${RAILS_ENV}" = "test" ] ; then
 fi
 # bundle exec rake db:otwseed
 
+bundle exec rails runner script/ensure_required_tags.rb
+
 bundle exec rake work:missing_stat_counters
 bundle exec rake skins:load_site_skins
 
