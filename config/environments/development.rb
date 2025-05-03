@@ -82,11 +82,6 @@ Rails.application.configure do
   config.rack_dev_mark.enable = false
   config.rack_dev_mark.theme = [:title, Rack::DevMark::Theme::GithubForkRibbon.new(position: "left", color: "green", fixed: "true")]
 
-  # why is this set twice?
-  # config.eager_load = false
-  config.assets.enabled = false
-  config.serve_static_files = true
-
   # Don't Enable Bullet gem to monitor application performance
   config.after_initialize do
     Bullet.enable = false
