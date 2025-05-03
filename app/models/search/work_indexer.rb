@@ -1,13 +1,29 @@
 class WorkIndexer < Indexer
-
   def self.klass
     "Work"
+  end
+
+  def self.klass_with_includes
+    Work.includes(
+      :approved_collections,
+      :direct_filters,
+      :external_author_names,
+      :filters,
+      :language,
+      :stat_counter,
+      :tags,
+      :users,
+      :relationships,
+      fandoms: { meta_tags: :meta_tags, merger: { meta_tags: :meta_tags } },
+      pseuds: :user,
+      serial_works: :series
+    )
   end
 
   def self.index_all(options = {})
     unless options[:skip_delete]
       delete_index
-      create_index(shards: 12)
+      create_index(shards: ArchiveConfig.WORKS_SHARDS)
     end
     options[:skip_delete] = true
     super(options)
@@ -22,7 +38,7 @@ class WorkIndexer < Indexer
         },
         title: {
           type: "text",
-          analyzer: "simple"
+          analyzer: "standard"
         },
         creators: {
           type: "text"
@@ -106,12 +122,14 @@ class WorkIndexer < Indexer
     end
   end
 
-  # Pluck the desired series data and then turn it back
-  # into a hash
+  # Format the id, title, and position of each series as a hash:
   def series_data(object)
-    series_attrs = [:id, :title, :position]
-    object.series.pluck(*series_attrs).map do |values|
-      series_attrs.zip(values).to_h
+    object.serial_works.map do |sw|
+      {
+        id: sw.series_id,
+        title: sw.series&.title,
+        position: sw.position
+      }
     end
   end
 end

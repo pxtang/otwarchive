@@ -2,7 +2,7 @@ class InboxController < ApplicationController
   include BlockHelper
 
   before_action :load_user
-  before_action :check_ownership
+  before_action :check_ownership_or_admin
 
   before_action :load_commentable, only: :reply
   before_action :check_blocked, only: :reply
@@ -13,10 +13,11 @@ class InboxController < ApplicationController
   end
 
   def show
-    @inbox_total = @user.inbox_comments.with_feedback_comment.count
-    @unread = @user.inbox_comments.with_feedback_comment.count_unread
+    authorize InboxComment if logged_in_as_admin?
+    @inbox_total = @user.inbox_comments.with_bad_comments_removed.count
+    @unread = @user.inbox_comments.with_bad_comments_removed.count_unread
     @filters = filter_params[:filters] || {}
-    @inbox_comments = @user.inbox_comments.with_feedback_comment.find_by_filters(@filters).page(params[:page])
+    @inbox_comments = @user.inbox_comments.with_bad_comments_removed.find_by_filters(@filters).page(params[:page])
   end
 
   def reply
@@ -30,6 +31,7 @@ class InboxController < ApplicationController
   end
 
   def update
+    authorize InboxComment if logged_in_as_admin?
     begin
       @inbox_comments = InboxComment.find(params[:inbox_comments])
       if params[:read]

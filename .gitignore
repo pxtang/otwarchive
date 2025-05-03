@@ -3,6 +3,8 @@
 .bundle
 .idea
 stdout
+*~
+.vscode/
 # /
 /*.tmproj
 /sphinx
@@ -55,6 +57,9 @@ public/system/test
 
 # /tmp/
 /tmp/*
+
+# ActiveRecord storage path
+storage/
 
 # /vendor/
 /vendor/gems

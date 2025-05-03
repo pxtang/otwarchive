@@ -6,7 +6,7 @@ Feature: Preferences
   Given I am logged in as "mywarning1"
     And I post the work "Adult Work by mywarning1" with rating "Mature"
   When I am logged in as "mywarning2"
-    And I go to my preferences page
+    And I follow "My Preferences"
     And I check "Show me adult content without checking."
     And I press "Update"
   Then I should see "Your preferences were successfully updated"
@@ -14,7 +14,7 @@ Feature: Preferences
     And I follow "Adult Work by mywarning1"
   Then I should not see "adult content"
     And I should see "Rating: Mature"
-  When I go to my preferences page
+  When I follow "My Preferences"
     And I uncheck "Show me adult content without checking."
     And I press "Update"
   Then I should see "Your preferences were successfully updated"
@@ -34,7 +34,7 @@ Feature: Preferences
     And I go to the "Big and Loud" work page
   Then I should see "#workskin .font-murkyyellow" in the page style
     And I should see "Hide Creator's Style"
-  When I go to my preferences page
+  When I follow "My Preferences"
   Then the "Hide work skins (you can still choose to show them)." checkbox should not be checked
   When I check "Hide work skins (you can still choose to show them)."
     And I press "Update"
@@ -48,3 +48,26 @@ Feature: Preferences
   Given I am logged out
     And I am logged in as "tasteful"
     And I go to the "Big and Loud" work page
+
+  Scenario: Hidden users' user, works, and series pages are disallowed for search engine indexing
+    Given I am logged in as "hidden"
+      And the user "hidden" is hidden from search engines
+      And I post the work "Hidden Work" as part of a series "Hidden Series"
+      And I am logged out
+    When I go to hidden's user page
+      Then the page should be hidden from search engines
+    When I view the work "Hidden Work"
+      Then the page should be hidden from search engines
+    When I view the series "Hidden Series"
+      Then the page should be hidden from search engines
+
+  Scenario: Unhidden users' user, works, and series pages are allowed for search engine indexing
+    Given I am logged in as "unhidden"
+      And I post the work "Unhidden Work" as part of a series "Unhidden Series"
+      And I am logged out
+    When I go to unhidden's user page
+      Then the page should not be hidden from search engines
+    When I view the work "Unhidden Work"
+      Then the page should not be hidden from search engines
+    When I view the series "Unhidden Series"
+      Then the page should not be hidden from search engines

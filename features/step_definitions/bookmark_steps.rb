@@ -310,6 +310,18 @@ Given /^"(.*?)" has bookmarks of works in various languages$/ do |user|
   step %{all indexing jobs have been run}
 end
 
+Given "{string} has a bookmark of a work titled {string}" do |user, title|
+  step %{the user "#{user}" exists and is activated}
+
+  user_pseud = User.find_by(login: user).default_pseud
+  work1 = FactoryBot.create(:work, title: title)
+  FactoryBot.create(:bookmark,
+                    bookmarkable: work1,
+                    pseud: user_pseud)
+
+  step %{all indexing jobs have been run}
+end
+
 def submit_bookmark_form(pseud, note, tags)
   select(pseud, from: "bookmark_pseud_id") unless pseud.nil?
   fill_in("bookmark_notes", with: note) unless note.nil?
@@ -348,6 +360,7 @@ end
 When /^I bookmark the works "([^\"]*)"$/ do |worklist|
   worklist.split(/, ?/).each do |work_title|
     step %{I bookmark the work "#{work_title}"}
+    step %{it is currently 1 second from now}
   end
 end
 
@@ -362,17 +375,14 @@ end
 
 When /^I open the bookmarkable work "([^\"]*)"$/ do |title|
   work = Work.find_by(title: title)
-  if !work
-    step %{I post the work "#{title}"}
-    work = Work.find_by(title: title)
-  end
+  work ||= FactoryBot.create(:work, title: title)
   visit work_path(work)
 end
 
 When /^I add my bookmark to the collection "([^\"]*)"$/ do |collection_name|
   step %{I follow "Add To Collection"}
-    fill_in("collection_names", with: "#{collection_name}")
-    click_button("Add")
+  fill_in("collection_names", with: collection_name)
+  click_button("Add")
 end
 
 When /^I rec the current work$/ do

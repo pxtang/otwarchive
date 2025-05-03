@@ -69,7 +69,7 @@ When /^I post (?:a|the) (?:(\d+) chapter )?work "([^"]*)"(?: with fandom "([^"]*
   # If the work is already a draft then visit the preview page and post it
   work = Work.find_by(title: title)
   if work
-    visit preview_work_url(work)
+    visit preview_work_path(work)
     click_button("Post")
   else
     # Note: this will match the above regexp and work just fine even if all the options are blank!
@@ -79,7 +79,7 @@ When /^I post (?:a|the) (?:(\d+) chapter )?work "([^"]*)"(?: with fandom "([^"]*
   # Now add the chapters
   if number_of_chapters.present? && number_of_chapters.to_i > 1
     work = Work.find_by_title(title)
-    visit work_url(work)
+    visit work_path(work)
     (number_of_chapters.to_i - 1).times do
       step %{I follow "Add Chapter"}
       fill_in("content", with: "Yet another chapter.")
@@ -87,7 +87,7 @@ When /^I post (?:a|the) (?:(\d+) chapter )?work "([^"]*)"(?: with fandom "([^"]*
     end
   end
   step %{all indexing jobs have been run}
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
   step %(the periodic filter count task is run)
 end
 
@@ -103,6 +103,8 @@ end
 When /^I post the works "([^"]*)"$/ do |worklist|
   worklist.split(/, ?/).each do |work_title|
     step %{I post the work "#{work_title}"}
+    # Ensure all works are created with different timestamps to avoid flakiness
+    step %{it is currently 1 second from now}
   end
 end
 
@@ -125,7 +127,6 @@ Given /^I have no works or comments$/ do
 end
 
 Given /^the chaptered work(?: with ([\d]+) chapters)?(?: with ([\d]+) comments?)? "([^"]*)"$/ do |n_chapters, n_comments, title|
-  step %{I start a new session}
   step %{basic tags}
 
   title ||= "Blabla"
@@ -149,13 +150,7 @@ Given /^the chaptered work(?: with ([\d]+) chapters)?(?: with ([\d]+) comments?)
 end
 
 Given /^I have a work "([^"]*)"$/ do |work|
-  step %{I am logged in as a random user}
-  step %{I post the work "#{work}"}
-end
-
-Given /^I have a locked work "([^"]*)"$/ do |work|
-  step %{I am logged in as a random user}
-  step %{I post the locked work "#{work}"}
+  step %{the work "#{work}"}
 end
 
 Given /^I have a multi-chapter draft$/ do
@@ -164,7 +159,6 @@ Given /^I have a multi-chapter draft$/ do
 end
 
 Given /^the work(?: "([^"]*)")? with(?: (\d+))? comments setup$/ do |title, n_comments|
-  step %{I start a new session}
   step %{basic tags}
 
   title ||= "Blabla"
@@ -176,7 +170,6 @@ Given /^the work(?: "([^"]*)")? with(?: (\d+))? comments setup$/ do |title, n_co
 end
 
 Given /^the work(?: "([^"]*)")? with(?: (\d+))? bookmarks? setup$/ do |title, n_bookmarks|
-  step %{I start a new session}
   step %{basic tags}
 
   title ||= "Blabla"
@@ -212,10 +205,33 @@ Given "the work {string} by {string}" do |title, login|
   FactoryBot.create(:work, title: title, authors: [user.default_pseud])
 end
 
+Given "the work {string} by {string} with fandom {string}" do |title, login, fandom|
+  user = ensure_user(login)
+  FactoryBot.create(:work, title: title, authors: [user.default_pseud], fandom_string: fandom)
+end
+
+Given "the work {string} by {string} with guest comments enabled" do |title, login|
+  user = ensure_user(login)
+  FactoryBot.create(:work, :guest_comments_on, title: title, authors: [user.default_pseud])
+end
+
 Given "the work {string} by {string} and {string}" do |title, login1, login2|
   user1 = ensure_user(login1)
   user2 = ensure_user(login2)
   FactoryBot.create(:work, title: title, authors: [user1.default_pseud, user2.default_pseud])
+end
+
+Given "the work {string} by {string}, {string} and {string}" do |title, login1, login2, login3|
+  user1 = ensure_user(login1)
+  user2 = ensure_user(login2)
+  user3 = ensure_user(login3)
+  FactoryBot.create(:work, title: title, authors: [user1.default_pseud, user2.default_pseud, user3.default_pseud])
+end
+
+Given "the work {string} by {string} and {string} with guest comments enabled" do |title, login1, login2|
+  user1 = ensure_user(login1)
+  user2 = ensure_user(login2)
+  FactoryBot.create(:work, :guest_comments_on, title: title, authors: [user1.default_pseud, user2.default_pseud])
 end
 
 Given /^the work "([^\"]*)" by "([^\"]*)" with chapter two co-authored with "([^\"]*)"$/ do |work, author, coauthor|
@@ -243,12 +259,17 @@ Given /^I am logged in as the author of "([^"]*)"$/ do |work|
   step %{I am logged in as "#{work.users.first.login}"}
 end
 
-Given /^the spam work "([^\"]*)"$/ do |work|
-  step %{I have a work "#{work}"}
-  step %{I log out}
-  w = Work.find_by_title(work)
+Given "the spam work {string}" do |work|
+  FactoryBot.create(:work, title: work).update_attribute(:spam, true)
+end
+
+Given "the hidden work {string}" do |work|
+  FactoryBot.create(:work, title: work).update_attribute(:hidden_by_admin, true)
+end
+
+Given "the work {string} is marked as spam" do |work|
+  w = Work.find_by(title: work)
   w.update_attribute(:spam, true)
-  w.update_attribute(:hidden_by_admin, true)
 end
 
 Given "the user-defined tag limit is {int}" do |count|
@@ -293,14 +314,14 @@ When /^I edit the draft "([^"]*)"$/ do |draft|
   step %{I edit the work "#{draft}"}
 end
 
-When /^I post the chaptered work "([^"]*)"$/ do |title|
-  step %{I post the work "#{title}"}
+When /^I post the chaptered work "([^"]*)"(?: in the collection "([^"]*)")?$/ do |title, collection|
+  step %{I post the work "#{title}" in the collection "#{collection}"}
   step %{I follow "Add Chapter"}
   fill_in("content", with: "Another Chapter.")
   click_button("Preview")
   step %{I press "Post"}
   step %{all indexing jobs have been run}
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 When /^I post the chaptered draft "([^"]*)"$/ do |title|
@@ -313,11 +334,17 @@ When /^I post the work "([^"]*)" without preview$/ do |title|
   step %{I post the work "#{title}"}
 end
 
+When "I post the work {string} with guest comments enabled" do |title|
+  step %{I set up the draft "#{title}"}
+  choose("Registered users and guests can comment")
+  step "I post the work without preview"
+end
+
 When /^a chapter is added to "([^"]*)"$/ do |work_title|
   step %{a draft chapter is added to "#{work_title}"}
   click_button("Post")
   step %{all indexing jobs have been run}
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 When /^a chapter with the co-author "([^\"]*)" is added to "([^\"]*)"$/ do |coauthor, work_title|
@@ -326,7 +353,7 @@ When /^a chapter with the co-author "([^\"]*)" is added to "([^\"]*)"$/ do |coau
   click_button("Post")
   step %{the user "#{coauthor}" accepts all co-creator requests}
   step %{all indexing jobs have been run}
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 When /^a draft chapter is added to "([^"]*)"$/ do |work_title|
@@ -334,7 +361,7 @@ When /^a draft chapter is added to "([^"]*)"$/ do |work_title|
   step %{I press "Preview"}
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 When /^I delete chapter ([\d]+) of "([^"]*)"$/ do |chapter, title|
@@ -368,7 +395,7 @@ When /^I post the(?: draft)? chapter$/ do
   click_button("Post")
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 Then /^I should see the default work content$/ do
@@ -408,7 +435,9 @@ When /^I edit the multiple works "([^"]*)" and "([^"]*)"/ do |title1, title2|
   unless Work.where(title: title2).exists?
     step %{I post the work "#{title2}"}
   end
-  step %{I go to my edit multiple works page}
+  step %{I follow "My Dashboard"}
+  step %{I follow "Works ("}
+  step %{I follow "Edit Works"}
   step %{I select "#{title1}" for editing}
   step %{I select "#{title2}" for editing}
   step %{I press "Edit"}
@@ -417,9 +446,12 @@ end
 When /^I edit multiple works with different comment moderation settings$/ do
   step %{I set up the draft "Work with Comment Moderation Enabled"}
   check("work_moderated_commenting_enabled")
+  choose("Registered users and guests can comment")
   step %{I post the work without preview}
   step %{I post the work "Work with Comment Moderation Disabled"}
-  step %{I go to my edit multiple works page}
+  step %{I follow "My Dashboard"}
+  step %{I follow "Works ("}
+  step %{I follow "Edit Works"}
   step %{I select "Work with Comment Moderation Enabled" for editing}
   step %{I select "Work with Comment Moderation Disabled" for editing}
   step %{I press "Edit"}
@@ -438,7 +470,9 @@ When /^I edit multiple works with different commenting settings$/ do
   choose("No one can comment")
   step %{I post the work without preview}
 
-  step %{I go to my edit multiple works page}
+  step %{I follow "My Dashboard"}
+  step %{I follow "Works ("}
+  step %{I follow "Edit Works"}
   step %{I select "Work with All Commenting Enabled" for editing}
   step %{I select "Work with Anonymous Commenting Disabled" for editing}
   step %{I select "Work with All Commenting Disabled" for editing}
@@ -448,7 +482,9 @@ end
 When /^I edit multiple works coauthored as "(.*)" with "(.*)"$/ do |author, coauthor|
   step %{I coauthored the work "Shared Work 1" as "#{author}" with "#{coauthor}"}
   step %{I coauthored the work "Shared Work 2" as "#{author}" with "#{coauthor}"}
-  step %{I go to my edit multiple works page}
+  step %{I follow "My Dashboard"}
+  step %{I follow "Works ("}
+  step %{I follow "Edit Works"}
   step %{I select "Shared Work 1" for editing}
   step %{I select "Shared Work 2" for editing}
   step %{I press "Edit"}
@@ -464,7 +500,7 @@ When /^the work "([^"]*)" was created (\d+) days ago$/ do |title, number|
   work.update_attribute(:created_at, number.to_i.days.ago)
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 When /^I post the locked work "([^"]*)"$/ do |title|
@@ -477,7 +513,7 @@ When /^I post the locked work "([^"]*)"$/ do |title|
   click_button("Post")
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 When /^the locked draft "([^"]*)"$/ do |title|
@@ -512,7 +548,19 @@ When /^I list the work "([^"]*)" as inspiration$/ do |title|
   work = Work.find_by(title: title)
   check("parent-options-show")
   url_of_work = work_url(work).sub("www.example.com", ArchiveConfig.APP_HOST)
-  fill_in("work_parent_attributes_url", with: url_of_work)
+  with_scope("#parent-options") do
+    fill_in("URL", with: url_of_work)
+  end
+end
+
+When /^I list an external work as inspiration$/ do
+  check("parent-options-show")
+  with_scope("#parent-options") do
+    fill_in("URL", with: "https://example.com")
+    fill_in("Title", with: "Example External")
+    fill_in("Author", with: "External Author")
+    select("English", from: "Language")
+  end
 end
 
 When /^I set the publication date to (\d+) (.*) (\d+)$/ do |day, month, year|
@@ -539,7 +587,7 @@ When /^I browse the "(.*?)" works$/ do |tagname|
   visit tag_works_path(tag)
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 
 When /^I browse the "(.*?)" works with page parameter "(.*?)"$/ do |tagname, page|
@@ -547,36 +595,51 @@ When /^I browse the "(.*?)" works with page parameter "(.*?)"$/ do |tagname, pag
   visit tag_works_path(tag, page: page)
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
+end
+
+When "I browse works in language {string}" do |language_name|
+  step %{all indexing jobs have been run}
+  step "the periodic tag count task is run"
+
+  language = Language.find_by(name: language_name)
+  visit language_works_path(language)
 end
 
 When /^I delete the work "([^"]*)"$/ do |work|
   work = Work.find_by(title: CGI.escapeHTML(work))
   visit edit_work_path(work)
   step %{I follow "Delete Work"}
-  # If JavaScript is enabled, window.confirm will be used and this button will not appear
-  click_button("Yes, Delete Work") unless @javascript
+
+  # If JavaScript is enabled, window.confirm will be used and we'll have to accept
+  if @javascript
+    expect(page.accept_alert).to eq("Are you sure you want to delete this work? This will destroy all comments and kudos on this work as well and CANNOT BE UNDONE!")
+  else
+    click_button("Yes, Delete Work")
+  end
+
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
+
 When /^I preview the work$/ do
   click_button("Preview")
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 When /^I update the work$/ do
   click_button("Update")
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 When /^I post the work without preview$/ do
   click_button "Post"
   step %{all indexing jobs have been run}
 
-  Tag.write_redis_to_database
+  step "the periodic tag count task is run"
 end
 When /^I post the work$/ do
   click_button "Post"
@@ -584,7 +647,7 @@ When /^I post the work$/ do
 end
 
 When /^the statistics for all works are updated$/ do
-  StatCounter.stats_to_database
+  RedisJobSpawner.perform_now("StatCounterJob")
   step %{the hit counts for all works are updated}
 end
 
@@ -636,23 +699,25 @@ When /^I add the end notes "([^"]*)"$/ do |notes|
   fill_in("work_endnotes", with: "#{notes}")
 end
 
-When /^I add the beginning notes "([^"]*)" to the work "([^"]*)"$/ do |notes, work|
+When "I add the beginning notes {string} to the work {string}" do |notes, work|
+  step %{I am logged in as the author of "#{work}"}
   step %{I edit the work "#{work}"}
   step %{I add the beginning notes "#{notes}"}
-  step %{I post the work without preview}
+  step %{I post the work}
 end
 
-When /^I add the end notes "([^"]*)" to the work "([^"]*)"$/ do |notes, work|
+When "I add the end notes {string} to the work {string}" do |notes, work|
+  step %{I am logged in as the author of "#{work}"}
   step %{I edit the work "#{work}"}
   step %{I add the end notes "#{notes}"}
-  step %{I post the work without preview}
+  step %{I post the work}
 end
 
 When /^I mark the work "([^"]*)" for later$/ do |work|
   work = Work.find_by(title: work)
   visit work_url(work)
   step %{I follow "Mark for Later"}
-  Reading.update_or_create_in_database
+  step "the readings are saved to the database"
 end
 
 When /^I follow the recent chapter link for the work "([^\"]*)"$/ do |work|
@@ -673,6 +738,9 @@ end
 
 When "the cache for the work {string} is cleared" do |title|
   work = Work.find_by(title: title)
+
+  # Delay to force the updated_at that gets set by .touch to be new
+  step "it is currently 1 second from now"
   # Touch the work to actually expire the cache
   work.touch
 end
@@ -685,7 +753,7 @@ end
 
 When /^the hit counts for all works are updated$/ do
   step "all AJAX requests are complete"
-  RedisHitCounter.save_recent_counts
+  RedisJobSpawner.perform_now("HitCountUpdateJob")
 end
 
 When /^all hit count information is reset$/ do
