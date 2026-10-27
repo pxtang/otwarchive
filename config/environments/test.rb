@@ -17,11 +17,8 @@ Rails.application.configure do
   # loading is working properly before deploying your code.
   config.eager_load = ENV["CI"].present?
 
-  # Configure public file server for tests with Cache-Control for performance.
-  config.public_file_server.enabled = true
-  config.public_file_server.headers = {
-    "Cache-Control" => "public, max-age=#{1.hour.to_i}"
-  }
+  # Configure public file server for tests with cache-control for performance.
+  config.public_file_server.headers = { "cache-control" => "public, max-age=#{1.hour.to_i}" }
 
   # Show full error reports and enable caching.
   config.consider_all_requests_local = true
@@ -53,18 +50,16 @@ Rails.application.configure do
   # Print deprecation notices to the stderr.
   config.active_support.deprecation = :stderr
 
+  # Highlight code that triggered database queries in logs.
+  # This slows down the test suite, so skip this when running in CI.
+  config.active_record.verbose_query_logs = ENV["CI"].blank?
+
   # Configure strong parameters to raise an exception if an unpermitted attribute is used
   config.action_controller.action_on_unpermitted_parameters = :raise
 
   # Make sure that we don't have a host mismatch:
-  config.action_controller.default_url_options = { host: "http://www.example.com", port: nil }
-  config.action_mailer.default_url_options = config.action_controller.default_url_options
-
-  # Raise exceptions for disallowed deprecations.
-  config.active_support.disallowed_deprecation = :raise
-
-  # Tell Active Support which deprecation messages to disallow.
-  config.active_support.disallowed_deprecation_warnings = []
+  config.action_controller.default_url_options = { host: "www.example.com", port: nil }
+  config.action_mailer.default_url_options = config.action_controller.default_url_options.merge(protocol: "https")
 
   # Raises error for missing translations.
   # config.i18n.raise_on_missing_translations = true
@@ -72,6 +67,6 @@ Rails.application.configure do
   # Annotate rendered view with file names.
   # config.action_view.annotate_rendered_view_with_filenames = true
 
-  # Raise error when a before_action's only/except options reference missing actions
+  # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
 end

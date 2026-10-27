@@ -1,6 +1,6 @@
 class FeedbacksController < ApplicationController
-  skip_before_action :store_location
   before_action :load_support_languages
+  before_action :load_support_notice
 
   def new
     @admin_setting = AdminSetting.current
@@ -18,7 +18,7 @@ class FeedbacksController < ApplicationController
     @admin_setting = AdminSetting.current
     @feedback = Feedback.new(feedback_params)
     @feedback.rollout = @feedback.rollout_string
-    @feedback.user_agent = request.env["HTTP_USER_AGENT"]
+    @feedback.user_agent = request.env["HTTP_USER_AGENT"]&.to(499)
     @feedback.ip_address = request.remote_ip
     @feedback.referer = nil unless @feedback.referer && ArchiveConfig.PERMITTED_HOSTS.include?(URI(@feedback.referer).host)
     @feedback.site_skin = helpers.current_skin
@@ -26,7 +26,7 @@ class FeedbacksController < ApplicationController
       @feedback.email_and_send
       flash[:notice] = t("successfully_sent",
         default: "Your message was sent to the Archive team - thank you!")
-      redirect_back_or_default(root_path)
+      redirect_to(url_from(@feedback.referer) || root_path)
     else
       flash[:error] = t("failure_send",
         default: "Sorry, your message could not be saved - please try again!")
@@ -38,6 +38,10 @@ class FeedbacksController < ApplicationController
 
   def load_support_languages
     @support_languages = Language.where(support_available: true).default_order
+  end
+
+  def load_support_notice
+    @support_notice = SupportNotice.where(active: true).first
   end
 
   def feedback_params

@@ -33,6 +33,25 @@ Feature: Collection
   When I follow "Approved"
   Then I should see "Murder in Milan"
 
+  Scenario: Collection invitation emails are translated
+  Given I am logged in as "Scott"
+    And I set my preferences to allow collection invitations
+    And a locale with translated emails
+    And the user "Scott" enables translated emails
+    And the user "Friend" allows co-creators
+  When I coauthored the work "Murder in Milan" as "Scott" with "Friend"
+    And the user "Friend" accepts all co-creator requests
+    And all emails have been delivered
+  When I have the collection "scotts collection" with name "scotts_collection"
+    And I am logged in as "moderator"
+    And I invite the work "Murder in Milan" to the collection "scotts collection"
+  Then 1 email should be delivered to "Scott"
+    And the email to "Scott" should be translated
+    And the email should have "Request to include work in a collection" in the subject
+    And 1 email should be delivered to "Friend"
+    And the email to "Friend" should be non-translated
+    And the email should have "Request to include work in a collection" in the subject
+
   Scenario: Invite another's work to a anonymous collection should not be allowed.
   Given I am logged in
     And I set my preferences to allow collection invitations
@@ -80,6 +99,8 @@ Feature: Collection
       And I invite the work "Over the Limit" to the collection "Favorites"
     Then I should see "This work has been invited to your collection (Favorites)."
     When I am logged in as "sky"
+      # Make sure the cache will expire when accepting the invitation:
+      And it is currently 1 second from now
       And "sky" accepts the invitation for their work in the collection "Favorites"
       And I submit
     Then I should see "Collection status updated!"

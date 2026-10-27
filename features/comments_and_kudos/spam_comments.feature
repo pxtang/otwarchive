@@ -99,7 +99,7 @@ Feature: Marking comments as spam
         | the work "Generic Work"  |
         | the admin post "Generic Post" |
 
-  Scenario Outline: New user's comments should be spam-checked on editing when the admin setting is enabled
+  Scenario Outline: New users' comments should be spam-checked on editing when the admin setting is enabled
     Given <commentable>
       And account age threshold for comment spam check is set to 5 days
       And Akismet will flag any comment containing "spam"
@@ -179,3 +179,18 @@ Feature: Marking comments as spam
     Then I should see "Comment created!"
     When I reply to a comment with "I still like spam"
     Then I should see "Comment created!"
+
+  Scenario Outline: Old users' comments should not be spam-checked after they change their email
+    Given <commentable>
+      And account age threshold for comment spam check is set to 5 days
+      And Akismet will flag any comment by "spammer"
+    When I am logged in as a new user "spammer"
+      And it is currently 10 days from now
+      And I change my email to "newemail@example.com"
+      And I post the comment "I like spam" on <commentable>
+    Then I should see "Comment created!"
+
+    Examples:
+        | commentable |
+        | the work "Generic Work"  |
+        | the admin post "Generic Post" |

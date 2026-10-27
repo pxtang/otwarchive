@@ -8,6 +8,9 @@ Given "a locale with translated emails" do
   I18n.backend.store_translations(:new, { mailer: { general: { footer: { about: { html: "Translated footer", text: "Translated footer" } } } } })
   I18n.backend.store_translations(:new, { kudo_mailer: { batch_kudo_notification: { subject: "Translated subject" } } })
   I18n.backend.store_translations(:new, { users: { mailer: { reset_password_instructions: { subject: "Translated subject" } } } })
+  I18n.backend.store_translations(:new, { activerecord: { models: { fandom: { other: "Fändom" } } } }) # for work_info partial in subscription email
+  # for HelpController#preferences_locale
+  I18n.backend.store_translations(:new, { help: { preferences_locale: { locale: { header: "Localised help page for test" } } } })
 end
 
 Given "the user {string} enables translated emails" do |user|
@@ -47,6 +50,12 @@ Then "the email to {string} should be non-translated" do |user|
   step(%{the email to "#{user}" should not contain "Translated footer"})
   step(%{the email to "#{user}" should contain "fan-run and fan-supported archive"})
   step(%{the email to "#{user}" should not contain "translation missing"})
+end
+
+Then "the last email to {string} should be non-translated" do |user|
+  step(%{the last email to "#{user}" should not contain "Translated footer"})
+  step(%{the last email to "#{user}" should contain "fan-run and fan-supported archive"})
+  step(%{the last email to "#{user}" should not contain "translation missing"})
 end
 
 Then "{string} should be emailed" do |user|

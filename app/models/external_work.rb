@@ -14,22 +14,15 @@ class ExternalWork < ApplicationRecord
 
   AUTHOR_LENGTH_MAX = 500
 
-  validates_presence_of :title
-  validates_length_of :title, minimum: ArchiveConfig.TITLE_MIN,
-                              too_short: ts("must be at least %{min} characters long.",
-                                            min: ArchiveConfig.TITLE_MIN)
-  validates_length_of :title, maximum: ArchiveConfig.TITLE_MAX,
-                              too_long: ts("must be less than %{max} characters long.",
-                                           max: ArchiveConfig.TITLE_MAX)
+  validates :title,
+            presence: true,
+            length: { minimum: ArchiveConfig.TITLE_MIN, maximum: ArchiveConfig.TITLE_MAX }
 
-  validates_length_of :summary, allow_blank: true, maximum: ArchiveConfig.SUMMARY_MAX,
-                                too_long: ts("must be less than %{max} characters long.",
-                                             max: ArchiveConfig.SUMMARY_MAX)
+  validates :summary, length: { maximum: ArchiveConfig.SUMMARY_MAX, allow_blank: true }
 
-  validates :author, presence: { message: ts("can't be blank") }
-  validates_length_of :author, maximum: AUTHOR_LENGTH_MAX,
-                               too_long: ts("must be less than %{max} characters long.",
-                                            max: AUTHOR_LENGTH_MAX)
+  validates :author,
+            presence: true,
+            length: { maximum: AUTHOR_LENGTH_MAX }
 
   validates :user_defined_tags_count,
             at_most: { maximum: proc { ArchiveConfig.USER_DEFINED_TAGS_MAX } }
@@ -39,9 +32,12 @@ class ExternalWork < ApplicationRecord
   #validates_presence_of :fandoms
 
   before_validation :cleanup_url
-  validates :url, presence: true, url_format: true, url_active: true
+  # i18n-tasks-use t("errors.attributes.url.invalid")
+  validates :url, presence: true, url_format: true
   def cleanup_url
     self.url = Addressable::URI.heuristic_parse(self.url) if self.url
+  rescue Addressable::URI::InvalidURIError
+    # url_format validation creates the error message
   end
 
   # Allow encoded characters to display correctly in titles
@@ -76,7 +72,7 @@ class ExternalWork < ApplicationRecord
 
   # Visibility has changed, which means we need to reindex
   # the external work's bookmarker pseuds, to update their bookmark counts.
-  def should_reindex_pseuds?
+  def should_update_pseud_and_collection_indexes?
     pertinent_attributes = %w[id hidden_by_admin]
     destroyed? || (saved_changes.keys & pertinent_attributes).present?
   end
@@ -86,17 +82,24 @@ class ExternalWork < ApplicationRecord
   ######################
 
   def bookmarkable_json
+    methods = %i[posted restricted revised_at]
+    %w[general public].each do |visibility|
+      methods << :"#{visibility}_tags"
+      methods << :"#{visibility}_filter_ids"
+
+      Tag::FILTERS.each do |tag_type|
+        methods << :"#{visibility}_#{tag_type.underscore}_ids"
+      end
+    end
+
     as_json(
       root: false,
       only: [
         :title, :summary, :hidden_by_admin, :created_at
       ],
-      methods: [
-        :posted, :restricted, :tag, :filter_ids, :rating_ids,
-        :archive_warning_ids, :category_ids, :fandom_ids, :character_ids,
-        :relationship_ids, :freeform_ids, :creators, :revised_at
-      ]
+      methods: methods
     ).merge(
+      creators: indexed_creators,
       language_id: language&.short,
       bookmarkable_type: "ExternalWork",
       bookmarkable_join: { name: "bookmarkable" }
@@ -113,7 +116,7 @@ class ExternalWork < ApplicationRecord
   end
   alias_method :restricted?, :restricted
 
-  def creators
+  def indexed_creators
     [author]
   end
 

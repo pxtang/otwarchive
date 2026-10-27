@@ -25,6 +25,13 @@ describe FeedbacksController do
       allow_any_instance_of(FeedbackReporter).to receive(:zoho_resource_client).and_return(mock_zoho)
     end
 
+    it "specifies a channel" do
+      expect(mock_zoho).to receive(:create_ticket).with(ticket_attributes: include(
+        "channel" => "Support Form"
+      ))
+      post :create, params: default_parameters
+    end
+
     context "when accessed by a logged-in user" do
       let(:user) { create(:user) }
 
@@ -81,6 +88,39 @@ describe FeedbacksController do
           ))
           post :create, params: default_parameters
         end
+      end
+    end
+
+    context "when the user agent is very long" do
+      let(:user_agent) { "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0" * 10 }
+      before do
+        request.env["HTTP_USER_AGENT"] = user_agent
+      end
+
+      it "sets the truncated user agent in the Zoho ticket" do
+        expect(mock_zoho).to receive(:create_ticket).with(ticket_attributes: include(
+          "cf" => include(
+            "cf_user_agent" => user_agent.to(499)
+          )
+        ))
+        post :create, params: default_parameters
+        expect(assigns[:feedback].user_agent.length).to eq(500)
+      end
+    end
+
+    context "when no user agent is set" do
+      before do
+        request.env["HTTP_USER_AGENT"] = nil
+      end
+
+      it "sets no user agent in the Zoho ticket" do
+        expect(mock_zoho).to receive(:create_ticket).with(ticket_attributes: include(
+          "cf" => include(
+            "cf_user_agent" => "Unknown user agent"
+          )
+        ))
+        post :create, params: default_parameters
+        expect(assigns[:feedback].user_agent).to be_nil
       end
     end
   end

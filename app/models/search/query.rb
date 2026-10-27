@@ -14,7 +14,8 @@ class Query
         body: generated_query,
         track_total_hits: true
       )
-    rescue Elasticsearch::Transport::Transport::Errors::BadRequest
+    rescue Elastic::Transport::Transport::Errors::BadRequest => e
+      Sentry.capture_exception(e) if defined?(Sentry) && $rollout.active?(:log_elasticsearch_errors)
       { error: "Your search failed because of a syntax error. Please try again." }
     end
   end
@@ -229,7 +230,7 @@ class Query
   end
 
   def split_query_text_phrases(fieldname, text)
-    str = ""
+    str = +""
     return str if text.blank?
     text.split(",").map(&:squish).each do |phrase|
       str << " #{fieldname}:\"#{phrase}\""
@@ -238,7 +239,7 @@ class Query
   end
 
   def split_query_text_words(fieldname, text)
-    str = ""
+    str = +""
     return str if text.blank?
     text.split(" ").each do |word|
       if word.length >= 2 && word[0] == "-"

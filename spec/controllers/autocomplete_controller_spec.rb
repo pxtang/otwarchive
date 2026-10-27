@@ -1,6 +1,54 @@
 require "spec_helper"
 
 describe AutocompleteController do
+  include LoginMacros
+
+  describe "GET #noncanonical_tag" do
+    context "when Elasticsearch raises a BadRequest error" do
+      before do
+        allow($elasticsearch).to receive(:search)
+          .and_raise(Elastic::Transport::Transport::Errors::BadRequest)
+      end
+
+      it "returns an empty result when there is no exact match" do
+        get :noncanonical_tag, params: { term: "test", type: "freeform", format: :json }
+        expect(JSON.parse(response.body)).to eq([])
+      end
+
+      it "falls back to the exact database match" do
+        create(:freeform, name: "test", canonical: false)
+        get :noncanonical_tag, params: { term: "test", type: "freeform", format: :json }
+        expect(JSON.parse(response.body)).to eq([{ "id" => "test", "name" => "test" }])
+      end
+
+      context "when the log_elasticsearch_errors rollout flag is on" do
+        before { $rollout.activate(:log_elasticsearch_errors) }
+
+        after { $rollout.deactivate(:log_elasticsearch_errors) }
+
+        it "reports the exception to Sentry" do
+          sentry = class_double("Sentry", capture_exception: nil)
+            .as_stubbed_const
+          get :noncanonical_tag,
+              params: { term: "test", type: "freeform", format: :json }
+          error = Elastic::Transport::Transport::Errors::BadRequest
+          expect(sentry).to have_received(:capture_exception)
+            .with(instance_of(error))
+        end
+      end
+
+      context "when the log_elasticsearch_errors rollout flag is off" do
+        it "does not report the exception to Sentry" do
+          sentry = class_double("Sentry", capture_exception: nil)
+            .as_stubbed_const
+          get :noncanonical_tag,
+              params: { term: "test", type: "freeform", format: :json }
+          expect(sentry).not_to have_received(:capture_exception)
+        end
+      end
+    end
+  end
+
   describe "tag" do
     let!(:tag1) { create(:canonical_fandom, name: "Match") }
     let!(:tag2) { create(:canonical_fandom, name: "Blargh") }
@@ -8,6 +56,53 @@ describe AutocompleteController do
     it "returns only matching tags" do
       get :tag, params: { term: "Ma", format: :json }
       expect(JSON.parse(response.body)).to eq([{ "id" => "Match", "name" => "Match" }])
+    end
+  end
+
+  describe "GET #collection_title" do
+    let!(:collection_to_find) { create(:collection, title: "I am here", name: "not_here") }
+    let!(:collection_not_to_find) { create(:collection, title: "Foo foo", name: "foo") }
+
+    before do
+      collection_to_find.add_to_autocomplete
+      collection_not_to_find.add_to_autocomplete
+    end
+
+    context "when searching by collection name" do
+      it "returns the fullname for display but only the title for the field" do
+        get :collection_title, params: { term: "not", format: :json }
+        expect(JSON.parse(response.body)).to eq([{ "id" => "I am here", "name" => "not_here: I am here" }])
+      end
+    end
+
+    context "when searching by collection title" do
+      it "returns the fullname for display but only the title for the field" do
+        get :collection_title, params: { term: "am", format: :json }
+        expect(JSON.parse(response.body)).to eq([{ "id" => "I am here", "name" => "not_here: I am here" }])
+      end
+    end
+
+    context "when searching for name and title" do
+      it "returns the fullname for display but only the title for the field" do
+        get :collection_title, params: { term: "here", format: :json }
+        expect(JSON.parse(response.body)).to eq([{ "id" => "I am here", "name" => "not_here: I am here" }])
+      end
+    end
+  end
+
+  describe "GET #collection_parent_name" do
+    let!(:user) { create(:user) }
+    let!(:collection1) { create(:collection, name: "some_name", title: "Unrelated Title", owner: user.default_pseud) }
+    let!(:collection2) { create(:collection, name: "unrelated_name", title: "Some Title", owner: user.default_pseud) }
+
+    before { fake_login_known_user(user) }
+
+    it "matches by name or title and formats suggestions as 'Title (name)'" do
+      get :collection_parent_name, params: { term: "some", format: :json }
+      expect(JSON.parse(response.body)).to contain_exactly(
+        { "id" => "some_name", "name" => "Unrelated Title (some_name)" },
+        { "id" => "unrelated_name", "name" => "Some Title (unrelated_name)" }
+      )
     end
   end
 end

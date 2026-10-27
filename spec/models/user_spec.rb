@@ -1,6 +1,17 @@
 require "spec_helper"
 
 describe User do
+  describe "audits" do
+    let(:user) { create(:user) }
+
+    it "can have an id larger than unsigned int" do
+      audit = Audited::Audit.new(id: 5_294_967_295, auditable: user)
+
+      expect(audit).to be_valid
+      expect(audit.save).to be_truthy
+    end
+  end
+
   describe "validations" do
     context "with a forbidden user name" do
       let(:forbidden_username) { Faker::Lorem.characters(number: 8) }
@@ -16,6 +27,24 @@ describe User do
         existing_user.save!(validate: false)
         expect(existing_user.save).to be_truthy
       end
+    end
+
+    context "with a username confusable with a forbidden one" do
+      before do
+        allow(ArchiveConfig).to receive(:FORBIDDEN_USERNAMES).and_return(["admin"])
+      end
+
+      it { is_expected.not_to allow_values("admin", "admın", "ad.min", "ad min ", "adrnin", "ADMIN", "ᗅdmin").for(:login) }
+    end
+
+    context "with a username not confusable with a forbidden one" do
+      let(:forbidden_username) { "admin" }
+
+      before do
+        allow(ArchiveConfig).to receive(:FORBIDDEN_USERNAMES).and_return(["admin"])
+      end
+
+      it { is_expected.to allow_values("user", "admn", "SadminER").for(:login) }
     end
   end
 
@@ -254,6 +283,15 @@ describe User do
         expect(existing_user.renamed_at).to eq(Time.current)
         expect(existing_user.admin_renamed_at).to be nil
       end
+      
+      it "records past username" do
+        freeze_time
+        existing_user.update!(login: "new_username")
+        user_change = existing_user.past_usernames.last
+        expect(user_change.user_id).to eq(existing_user.id)
+        expect(user_change.username).not_to eq("new_username")
+        expect(user_change.changed_at).to eq(Time.current)
+      end
 
       context "username was recently changed" do
         before do
@@ -340,6 +378,21 @@ describe User do
         expect(log_item.admin_id).to be_nil
         expect(log_item.note).to eq("System Generated")
       end
+      
+      it "records previous email" do
+        old_email = existing_user.past_emails.last
+        expect(old_email.email_address).not_to eq(existing_user.email)
+        expect(old_email.user_id).to eq(existing_user.id)
+        expect(old_email.changed_at).to eq(existing_user.updated_at)
+      end
+      
+      it "doesn't record previous email before confirmation" do
+        old_email = existing_user.user_past_emails.last
+        existing_user.update!(email: "newemail2@example.com")
+        existing_user.reload
+        after_email = existing_user.user_past_emails.last
+        expect(old_email).to eq(after_email)
+      end
     end
 
     context "as an admin" do
@@ -357,6 +410,58 @@ describe User do
         expect(log_item.action).to eq(ArchiveConfig.ACTION_NEW_EMAIL)
         expect(log_item.admin_id).to eq(admin.id)
         expect(log_item.note).to eq("Change made by #{admin.login}")
+      end
+    end
+    
+    context "username was changed to match an existing pseud's name. Existing login has capitalization and diacretics new is all downcased" do
+      let(:new_pseud) { build(:pseud, name: "New_Usernamé") }
+
+      before do
+        existing_user.pseuds << new_pseud
+        existing_user.update!(login: "new_username")
+        existing_user.reload
+      end
+
+      it "pseud's capitalization and diacritics were changed to match the new username's" do 
+        expect(existing_user.pseuds.size).to eq(2)
+        expect(existing_user.pseuds.second.name).to eq(existing_user.login)
+        expect(existing_user.pseuds.second.name).to eq("new_username")
+        expect(existing_user.login).to eq("new_username")
+      end
+    end
+
+    context "username was changed to match an existing pseud's name. Existing login have capitalization and diacretics, new only has capitalization" do
+      let(:new_pseud) { build(:pseud, name: "New_Usernamé") }
+
+      before do
+        existing_user.pseuds << new_pseud
+        existing_user.update!(login: "new_UsernaMe")
+        existing_user.reload
+      end
+
+      it "pseud's capitalization and diacritics were changed to match the new username's" do 
+        expect(existing_user.pseuds.size).to eq(2)
+        expect(existing_user.pseuds.second.name).to eq(existing_user.login)
+        expect(existing_user.pseuds.second.name).to eq("new_UsernaMe")
+        expect(existing_user.login).to eq("new_UsernaMe")
+      end
+    end
+    
+    context "username was changed to not match an existing pseud's name, and the user has no psueds" do
+      let(:new_pseud) { build(:pseud, name: "New_Usernamé") }
+
+      before do
+        existing_user.pseuds = []
+        
+        existing_user.update!(login: "new_UsernaMe")
+        existing_user.reload
+      end
+
+      it "creates a new pseud for the users new login" do 
+        expect(existing_user.pseuds.size).to eq(1)
+        expect(existing_user.pseuds.first.name).to eq(existing_user.login)
+        expect(existing_user.pseuds.first.name).to eq("new_UsernaMe")
+        expect(existing_user.login).to eq("new_UsernaMe")
       end
     end
   end
@@ -385,6 +490,84 @@ describe User do
       expect(not_found).to eq(["unknown@ao3.org", "nobody@example.com"])
       expect(found.size).to eq(emails.map(&:downcase).uniq.size - not_found.size)
       expect(duplicates).to eq(3)
+    end
+  end
+
+  describe "reindexing" do
+    let!(:user) { create(:user, login: "before") }
+
+    context "when username is changed" do
+      it "enqueues the user for reindex" do
+        expect do
+          user.update!(login: "changed")
+        end.to add_to_reindex_queue(user, :users)
+      end
+    end
+
+    context "when user is destroyed" do
+      it "enqueues the user for reindex" do
+        expect do
+          user.destroy!
+        end.to add_to_reindex_queue(user, :users)
+      end
+    end
+  end
+
+  describe "canonical_email" do
+    context "when a user is created" do
+      let(:user) { create(:user, email: "old+foo@example.com") }
+
+      it "sets the canonical email" do
+        expect(user.canonical_email).to eq("old@example.com")
+      end
+    end
+
+    context "when a user requests an email change" do
+      let!(:existing_user) { create(:user, email: "old+foo@example.com") }
+
+      before do
+        existing_user.update!(email: "new+bar@example.com")
+        existing_user.reload
+      end
+
+      it "does not change the canonical email" do
+        # devise reverts the email change and sets unconfirmed_email
+        expect(existing_user.email).to eq("old+foo@example.com")
+        expect(existing_user.unconfirmed_email).to eq("new+bar@example.com")
+
+        expect(existing_user.canonical_email).to eq("old@example.com")
+      end
+
+      context "when the user confirms the email change" do
+        before do
+          existing_user.confirm
+        end
+
+        it "changes the canonical email" do
+          # devise sets email based on unconfirmed_email and resets unconfirmed_email
+          expect(existing_user.email).to eq("new+bar@example.com")
+          expect(existing_user.unconfirmed_email).to be_nil
+
+          expect(existing_user.canonical_email).to eq("new@example.com")
+        end
+      end
+    end
+
+    context "when an admin changes a user's email" do
+      let(:user) { create(:user, email: "old+foo@example.com") }
+
+      before do
+        user.skip_reconfirmation!
+        user.update!(email: "new+bar@example.com")
+        user.reload
+      end
+
+      it "changes the canonical email" do
+        expect(user.email).to eq("new+bar@example.com")
+        expect(user.unconfirmed_email).to be_nil
+
+        expect(user.canonical_email).to eq("new@example.com")
+      end
     end
   end
 end

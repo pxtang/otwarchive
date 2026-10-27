@@ -43,7 +43,7 @@ Scenario: Work page title should change when tags are edited
   Then the page title should include "Stargate"
   When I edit the work "New Story"
     And I fill in "Fandoms" with "Harry Potter"
-    And I press "Post"
+    And I press "Update"
   When I view the work "New Story"
   Then the page title should include "Harry Potter"
     And the page title should not include "Stargate"
@@ -64,10 +64,32 @@ Scenario: Inbox has the expected browser page title
 
   When I am logged in as "boxer"
     And I go to boxer's inbox page
-  Then I should see the page title "Show Inbox | Example Archive"
+  Then I should see the page title "boxer - Inbox | Example Archive"
 
 Scenario: New tag set page has the expected browser page title
 
   When I am logged in as "user"
   When I go to the new tag set page
   Then I should see the page title "New Owned Tag Set | Example Archive"
+
+Scenario: Public site skins page has the expected browser page title
+
+  When I go to the public skins page
+  Then I should see the page title "Public Site Skins | Example Archive"
+
+Scenario: Public work skins page has the expected browser page title
+
+  When I go to the work-skins page
+  Then I should see the page title "Public Work Skins | Example Archive"
+
+Scenario: User site skins page has the expected browser page title
+
+  Given I am logged in as "boxer"
+  When I go to the skins page for "boxer"
+  Then I should see the page title "boxer - Site Skins | Example Archive"
+
+Scenario: User work skins page has the expected browser page title
+
+  Given I am logged in as "boxer"
+  When I go to the work-skins page for "boxer"
+  Then I should see the page title "boxer - Work Skins | Example Archive"

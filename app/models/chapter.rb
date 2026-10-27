@@ -11,23 +11,15 @@ class Chapter < ApplicationRecord
 
   acts_as_commentable
 
-  validates_length_of :title, allow_blank: true, maximum: ArchiveConfig.TITLE_MAX,
-    too_long: ts("must be less than %{max} characters long.", max: ArchiveConfig.TITLE_MAX)
+  validates :title, length: { maximum: ArchiveConfig.TITLE_MAX, allow_blank: true }
 
-  validates_length_of :summary, allow_blank: true, maximum: ArchiveConfig.SUMMARY_MAX,
-    too_long: ts("must be less than %{max} characters long.", max: ArchiveConfig.SUMMARY_MAX)
-  validates_length_of :notes, allow_blank: true, maximum: ArchiveConfig.NOTES_MAX,
-    too_long: ts("must be less than %{max} characters long.", max: ArchiveConfig.NOTES_MAX)
-  validates_length_of :endnotes, allow_blank: true, maximum: ArchiveConfig.NOTES_MAX,
-    too_long: ts("must be less than %{max} characters long.", max: ArchiveConfig.NOTES_MAX)
+  validates :summary, length: { maximum: ArchiveConfig.SUMMARY_MAX, allow_blank: true }
+  validates :notes, length: { maximum: ArchiveConfig.NOTES_MAX, allow_blank: true }
+  validates :endnotes, length: { maximum: ArchiveConfig.NOTES_MAX, allow_blank: true }
 
-
-  validates_presence_of :content
-  validates_length_of :content, minimum: ArchiveConfig.CONTENT_MIN,
-    too_short: ts("must be at least %{min} characters long.", min: ArchiveConfig.CONTENT_MIN)
-
-  validates_length_of :content, maximum: ArchiveConfig.CONTENT_MAX,
-    too_long: ts("cannot be more than %{max} characters long.", max: ArchiveConfig.CONTENT_MAX)
+  validates :content,
+            presence: true,
+            length: { minimum: ArchiveConfig.CONTENT_MIN, maximum: ArchiveConfig.CONTENT_MAX }
 
   attr_accessor :wip_length_placeholder
 
@@ -39,6 +31,8 @@ class Chapter < ApplicationRecord
       end
     end
   end
+
+  delegate :anonymous?, to: :work
 
   before_save :strip_title
   before_save :set_word_count
@@ -52,28 +46,34 @@ class Chapter < ApplicationRecord
 
   after_save :fix_positions
   def fix_positions
-    if work&.persisted?
-      positions_changed = false
-      self.position ||= 1
-      chapters = work.chapters.order(:position)
-      if chapters && chapters.length > 1
-        chapters = chapters - [self]
-        chapters.insert(self.position-1, self)
-        chapters.compact.each_with_index do |chapter, i|
-          if chapter.position != i+1
-            Chapter.where(["id = ?", chapter.id]).update_all(["position = ?", i + 1])
-            positions_changed = true
-          end
-        end
-      end
-      # We're caching the chapter positions in the comment blurbs and the last
-      # chapter link in the work blurbs so we need to expire the blurbs and the
-      # work indexes.
-      if positions_changed
-        work.comments.each{ |c| c.touch }
-        work.expire_caches
+    return unless work&.persisted?
+
+    chapters = work.chapters.order(:position).to_a
+    return if chapters.empty?
+
+    chapters.delete(self)
+    insert_at = (self.position.to_i - 1).clamp(0, chapters.length)
+    chapters.insert(insert_at, self)
+
+    positions_changed = false
+
+    chapters.each_with_index do |chapter, index|
+      correct_position = index + 1
+      if chapter.position != correct_position
+        Chapter.where(id: chapter.id).update_all(position: correct_position)
+        positions_changed = true
       end
     end
+   
+    return unless positions_changed
+
+    # Clear ActiveRecord cache so when work.chapters is queried next, the positions are correct
+    work.association(:chapters).reset
+    # We're caching the chapter positions in the comment blurbs and the last
+    # chapter link in the work blurbs so we need to expire the blurbs and the
+    # work indexes.
+    work.comments.each(&:touch)
+    work.expire_caches
   end
 
   after_save :invalidate_chapter_count,
@@ -116,7 +116,7 @@ class Chapter < ApplicationRecord
   end
 
   def chapter_header
-    "#{ts("Chapter")} #{position}"
+    I18n.t("activerecord.attributes.chapters.chapter_header", position: position)
   end
 
   def chapter_title
@@ -176,7 +176,7 @@ class Chapter < ApplicationRecord
     if !self.published_at
       self.published_at = Date.current
     elsif self.published_at > Date.current
-      errors.add(:base, ts("Publication date can't be in the future."))
+      errors.add(:base, :future_published_at)
       throw :abort
     end
   end
@@ -199,5 +199,9 @@ class Chapter < ApplicationRecord
   def expire_comments_count
     super
     work&.expire_comments_count
+  end
+
+  def expire_byline_cache
+    Rails.cache.delete(["byline_data", cache_key])
   end
 end

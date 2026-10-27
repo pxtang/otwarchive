@@ -1,6 +1,11 @@
 # Use this hook to configure devise mailer, warden hooks and so forth.
 # Many of these configuration options can be set straight in your model.
 Devise.setup do |config|
+  config.warden do |manager|
+    manager.default_strategies(scope: :admin).unshift :two_factor_authenticatable
+    manager.default_strategies(scope: :admin).unshift :two_factor_backupable
+  end
+
   # The secret key used by Devise. Devise uses this key to generate
   # random tokens. Changing this key will render invalid all existing
   # confirmation, reset password and unlock tokens in the database.
@@ -102,7 +107,7 @@ Devise.setup do |config|
   # config.pepper = '70ca884cc885f6ea790b81e61162e634afadc5121775443df4cb3d1e3d76d74b5c226af89d64b69c000ad9b42f1998c49ef2758ddbbab01483eded4723d7ef97'
 
   # Send a notification email when the user's password is changed
-  # config.send_password_change_notification = false
+  config.send_password_change_notification = true
 
   # ==> Configuration for :confirmable
   # A period that the user is allowed to access the website even without
@@ -118,7 +123,7 @@ Devise.setup do |config|
   # their account can't be confirmed with the token any more.
   # Default is nil, meaning there is no restriction on how long a user can take
   # before confirming their account.
-  config.confirm_within = ArchiveConfig.DAYS_TO_PURGE_UNACTIVATED.days
+  config.confirm_within = ArchiveConfig.DAYS_TO_CONFIRM_EMAIL_CHANGE.days
 
   # If true, requires any email changes to be confirmed (exactly the same way as
   # initial account confirmation) to be applied. Requires additional unconfirmed_email

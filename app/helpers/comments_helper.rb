@@ -11,7 +11,18 @@ module CommentsHelper
     else
       title = link_to(commentable.commentable_name, commentable)
     end
-    (ts('Reading Comments on ') + title).html_safe
+    t("comments_helper.page_heading.reading_comments_html", commentable_link: title)
+  end
+
+  def title_for_new_comment_page(commentable)
+    title = if commentable.commentable_name.blank?
+              ""
+            elsif commentable.is_a?(Tag)
+              link_to_tag(commentable)
+            else
+              link_to(commentable.commentable_name, commentable)
+            end
+    t("comments_helper.page_heading.new_comment_html", commentable_link: title)
   end
 
   def link_to_comment_ultimate_parent(comment)
@@ -63,6 +74,10 @@ module CommentsHelper
     else
       content_tag(:span, comment.name) + content_tag(:span, " #{ts('(Guest)')}", class: "role")
     end
+  end
+
+  def chapter_description_link(comment)
+    link_to t("comments_helper.chapter_link_html", position: comment.parent.position), work_chapter_path(comment.parent.work, comment.parent)
   end
 
   def image_safety_mode_cache_key(comment)
@@ -280,7 +295,7 @@ module CommentsHelper
   end
 
   def do_cancel_delete_comment_link(comment)
-    if params[:delete_comment_id] && params[:delete_comment_id] == comment.id.to_s
+    if params[:delete_comment_id] == comment.id.to_s
       cancel_delete_comment_link(comment)
     else
       delete_comment_link(comment)
@@ -311,7 +326,7 @@ module CommentsHelper
   # return html link to delete comments
   def delete_comment_link(comment)
     link_to(
-      ts("Delete"),
+      t("comments_helper.actions.delete"),
       url_for(controller: :comments,
               action: :delete_comment,
               id: comment,
@@ -319,10 +334,9 @@ module CommentsHelper
       remote: true)
   end
 
-  # return link to cancel new reply to a comment
   def cancel_delete_comment_link(comment)
     link_to(
-      ts("Cancel"),
+      t("comments_helper.actions.cancel"),
       url_for(controller: :comments,
               action: :cancel_comment_delete,
               id: comment,

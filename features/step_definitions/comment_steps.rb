@@ -106,10 +106,6 @@ Then /^I should see Last Edited nowish$/ do
   step "I should see \"Last Edited #{nowish}\""
 end
 
-Then /^I should see the comment form$/ do
-  step %{I should see "New comment on"}
-end
-
 Then /^I should see the reply to comment form$/ do
   step %{I should see "Comment as" within ".odd"}
 end
@@ -199,6 +195,11 @@ When /^I reply to a comment with "([^"]*)"$/ do |comment_text|
   end
 end
 
+When "I visit the comments page for the work {string}" do |work|
+  work = Work.find_by(title: work)
+  visit work_comments_path(work, only_path: false)
+end
+
 When /^I visit the new comment page for the work "([^"]+)"$/ do |work|
   work = Work.find_by(title: work)
   visit new_work_comment_path(work, only_path: false)
@@ -235,12 +236,16 @@ When "Akismet will flag any comment containing {string}" do |spam_text|
   end
 end
 
-When /^I post a guest comment$/ do
+When "I post a guest comment {string}" do |comment_content|
   fill_in("comment[name]", with: "guest")
   fill_in("comment[email]", with: "guest@example.org")
-  fill_in("comment[comment_content]", with: "This was really lovely!")
+  fill_in("comment[comment_content]", with: comment_content)
   click_button("Comment")
   step %{I should see "Comment created!"}
+end
+
+When "I post a guest comment" do
+  step "I post a guest comment \"This was really lovely!\""
 end
 
 When /^all comments by "([^"]*)" are marked as spam$/ do |name|
@@ -253,14 +258,14 @@ When /^I compose an invalid comment(?: within "([^"]*)")?$/ do |selector|
   end
 end
 
-When /^I delete the comment$/ do
+When "I delete the comment" do
   step %{I follow "Delete" within ".odd"}
-  step %{I follow "Yes, delete!"}
+  step %{I press "Yes, delete!"}
 end
 
-When /^I delete the reply comment$/ do
+When "I delete the reply comment" do
   step %{I follow "Delete" within ".even"}
-  step %{I follow "Yes, delete!"}
+  step %{I press "Yes, delete!"}
 end
 
 When /^I view the latest comment$/ do
@@ -309,6 +314,12 @@ end
 When /^I visit the thread for the comment on "([^\"]*?)"/ do |work|
   w = Work.find_by(title: work)
   visit comment_path(w.comments.first)
+end
+
+When "I visit the reply page to the comment on {string}" do |work|
+  w = Work.find_by(title: work)
+  comment_id = w.comments.first
+  visit comment_path(comment_id, add_comment_reply_id: comment_id, anchor: "comment_#{comment_id}")
 end
 
 Then /^there should be (\d+) comments on "([^\"]*?)"/ do |num, work|
@@ -373,7 +384,7 @@ When /^I delete all visible comments on "([^\"]*?)"$/ do |work|
     visit work_url(work, show_comments: true)
     break unless page.has_content? "Delete"
     click_link("Delete")
-    click_link("Yes, delete!") # TODO: Fix along with comment deletion.
+    click_button("Yes, delete!")
   end
 end
 

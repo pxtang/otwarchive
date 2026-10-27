@@ -5,20 +5,25 @@ Feature: Delete pseud.
   I want to delete a pseud
 
   Scenario: Delete pseud, have option to move works, delete works, or orphan works. Test if those choices work.
-    Given I have loaded the fixtures
+    Given the user "testuser" exists and is activated
+      And "testuser" has the pseud "tester_pseud"
+      And "testuser" has the pseud "testy"
+      And "testuser" has the pseud "testymctesty"
+      And pseud "tester_pseud" has a bookmark of a work titled "one" by "testuser2"
+      And pseud "testy" has a bookmark of a work titled "two" by "testuser2"
+      And pseud "testymctesty" has a bookmark of a work titled "three" by "testuser2"
     When I am logged in as "sad_user_with_no_pseuds"
       And I am on sad_user_with_no_pseuds's pseuds page
     Then I should not see "Delete"
 
-    When I am logged out
-      And I am logged in as "testuser"
+    When I am logged in as "testuser"
       And I am on testuser's pseuds page
       And I follow "delete_tester_pseud"
       And I press "Cancel"
     Then I should see "The pseud was not deleted."
     When I am on testuser's pseuds page
       And I follow "tester_pseud"
-    Then I should see "fifth by testuser2"
+    Then I should see "one by testuser2"
 
     When I am on testuser's pseuds page
       And I follow "delete_tester_pseud"
@@ -34,7 +39,7 @@ Feature: Delete pseud.
     Then I should see "The pseud was successfully deleted."
     When I am on testuser's pseuds page
       And I follow "testymctesty"
-    Then I should see "fourth by testuser2"
+    Then I should see "three by testuser2"
 
   Scenario: Deleting a pseud shouldn't break gift exchange signups.
     Given I am logged in as "moderator"
@@ -187,7 +192,7 @@ Feature: Delete pseud.
     Then I should see "New members invited: other_pseud (myself)"
     When I select "Moderator" from "myself_role"
       And I submit with the 4th button
-    Then I should see "Updated other_pseud."
+    Then I should see "Updated other_pseud (myself)."
     When I go to the collections page
     Then I should see "My Collection Thing"
       And I should see "other_pseud (myself)" within "#main"
@@ -202,3 +207,30 @@ Feature: Delete pseud.
     Then I should see "My Collection Thing"
       And I should not see "other_pseud (myself)" within "#main"
       And I should see "myself" within "#main"
+
+  Scenario: Deleting a pseud updates series blurbs
+    Given I am logged in as "Myself"
+      And "Myself" has the pseud "me2"
+      And I add the work "Great Work" to series "Best Series" as "me2"
+    When I go to the dashboard page for user "Myself" with pseud "me2"
+      And I follow "Series"
+    Then I should see "Best Series by me2 (Myself)"
+    When "Myself" deletes the pseud "me2"
+      And I follow "Series"
+    Then I should see "Best Series by Myself"
+
+  Scenario: Deleting a pseud updates gift blurbs
+    Given "giftee1" has the pseud "me2"
+      And the user "giftee1" allows gifts
+      And I am logged in as "gifter"
+      And I set up the draft "GiftStory1"
+      And I give the work to "me2 (giftee1)"
+      And I press "Post"
+      And I am logged in as "giftee1"
+    When I go to giftee1's gifts page
+    Then I should see "GiftStory1 by gifter for me2 (giftee1)"
+    # Delay before deleting to make sure the cache is expired
+    When it is currently 1 second from now
+      And "giftee1" deletes the pseud "me2"
+      And I go to giftee1's gifts page
+    Then I should see "GiftStory1 by gifter for giftee1"

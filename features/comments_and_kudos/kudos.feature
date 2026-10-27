@@ -251,3 +251,59 @@ Feature: Kudos
     When I view the work "Awesome Story"
       And I press "Kudos ♥"
     Then I should see "Please log out of your official account!"
+
+  @javascript
+  Scenario: Cannot leave kudos while logged in as a user with the archivist role
+    Given the user "clicker" exists and has the role "archivist"
+      And I am logged in as "clicker"
+    When I view the work "Awesome Story"
+      And I press "Kudos ♥"
+    Then I should see "Please log out of your archivist account!"
+
+  Scenario: Leave kudos on an admin post when logged in
+    Given I have posted an admin post
+      And I am logged in as "happyuser"
+      And all emails have been delivered
+      And I go to the "Default Admin Post" admin post page
+      And I press "Kudos ♥"
+    Then I should see "Thank you for leaving kudos!"
+      And I should see "happyuser left kudos on this post!"
+    When I press "Kudos ♥"
+    Then I should see "You have already left kudos here. :)"
+    When kudos are sent
+    Then 0 emails should be delivered
+
+  Scenario: Leave kudos on an admin post when logged out
+    Given I have posted an admin post
+      And all emails have been delivered
+      And I go to the "Default Admin Post" admin post page
+      And I press "Kudos ♥"
+    Then I should see "Thank you for leaving kudos!"
+      And I should see "1 guest left kudos on this post!"
+    When I press "Kudos ♥"
+    Then I should see "You have already left kudos here. :)"
+    When kudos are sent
+    Then 0 emails should be delivered
+
+  @javascript
+  Scenario: Leave kudos on an admin post via JS when logged in
+    Given I have posted an admin post
+      And I am logged in as "happyuser"
+      And all emails have been delivered
+      And I go to the "Default Admin Post" admin post page
+      And I press "Kudos ♥"
+    Then I should see "Thank you for leaving kudos!"
+      And I should see "happyuser left kudos on this post!"
+    When I press "Kudos ♥"
+    Then I should see "You have already left kudos here. :)"
+
+  @javascript
+  Scenario: Leave kudos on an admin post via JS when logged out
+    Given I have posted an admin post
+      And all emails have been delivered
+      And I go to the "Default Admin Post" admin post page
+      And I press "Kudos ♥"
+    Then I should see "Thank you for leaving kudos!"
+      And I should see "1 guest left kudos on this post!"
+    When I press "Kudos ♥"
+    Then I should see "You have already left kudos here. :)"

@@ -18,7 +18,7 @@ class AdminSetting < ApplicationRecord
     invite_from_queue_number: ArchiveConfig.INVITE_FROM_QUEUE_NUMBER,
     invite_from_queue_frequency: ArchiveConfig.INVITE_FROM_QUEUE_FREQUENCY,
     account_creation_enabled?: ArchiveConfig.ACCOUNT_CREATION_ENABLED,
-    days_to_purge_unactivated: ArchiveConfig.DAYS_TO_PURGE_UNACTIVATED,
+    days_to_purge_unactivated: 2,
     suspend_filter_counts?: false,
     enable_test_caching?: false,
     cache_expiration: 10,
@@ -38,14 +38,14 @@ class AdminSetting < ApplicationRecord
       invite_from_queue_number: ArchiveConfig.INVITE_FROM_QUEUE_NUMBER,
       invite_from_queue_frequency: ArchiveConfig.INVITE_FROM_QUEUE_FREQUENCY,
       account_creation_enabled: ArchiveConfig.ACCOUNT_CREATION_ENABLED,
-      days_to_purge_unactivated: ArchiveConfig.DAYS_TO_PURGE_UNACTIVATED
+      days_to_purge_unactivated: 2
     )
     settings.save(validate: false)
     settings
   end
 
   def self.current
-    Rails.cache.fetch("admin_settings-v2", race_condition_ttl: 10.seconds) { AdminSetting.first } || OpenStruct.new(DEFAULT_SETTINGS)
+    Rails.cache.fetch("admin_settings-v4", race_condition_ttl: 10.seconds) { AdminSetting.first } || OpenStruct.new(DEFAULT_SETTINGS)
   end
 
   class << self
@@ -58,7 +58,9 @@ class AdminSetting < ApplicationRecord
     return unless self.invite_from_queue_enabled? && InviteRequest.any? && Time.current >= self.invite_from_queue_at
 
     new_time = Time.current + self.invite_from_queue_frequency.hours
-    self.first.update_attribute(:invite_from_queue_at, new_time)
+    current_setting = self.first
+    current_setting.invite_from_queue_at = new_time
+    current_setting.save(validate: false, touch: false)
     InviteFromQueueJob.perform_now(count: invite_from_queue_number)
   end
 
@@ -77,7 +79,7 @@ class AdminSetting < ApplicationRecord
     self.reload
 
     # However, we only cache it if the transaction is successful.
-    after_commit { Rails.cache.write("admin_settings-v2", self) }
+    after_commit { Rails.cache.write("admin_settings-v4", self) }
   end
 
   private

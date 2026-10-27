@@ -4,6 +4,7 @@ class ExternalWorksController < ApplicationController
   before_action :check_user_status, only: [:new]
 
   def new
+    @page_subtitle = t(".page_title")
     @bookmarkable = ExternalWork.new
     @bookmark = Bookmark.new
   end
@@ -11,8 +12,12 @@ class ExternalWorksController < ApplicationController
   # Used with bookmark form to get an existing external work and return it via ajax
   def fetch
     if params[:external_work_url]
-      url = Addressable::URI.heuristic_parse(params[:external_work_url]).to_str
-      @external_work = ExternalWork.where(url: url).first
+      url = begin
+        Addressable::URI.heuristic_parse(params[:external_work_url]).to_str
+      rescue Addressable::URI::InvalidURIError
+        nil
+      end
+      @external_work = ExternalWork.where(url: url).first if url
     end
     respond_to do |format|
       format.js
@@ -46,7 +51,7 @@ class ExternalWorksController < ApplicationController
     @external_work.attributes = work_params
     if @external_work.update(external_work_params)
       flash[:notice] = t(".successfully_updated")
-      redirect_to(@external_work)
+      redirect_to external_work_path(@external_work)
     else
       render action: "edit"
     end

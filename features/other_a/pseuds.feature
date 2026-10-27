@@ -18,7 +18,7 @@ Scenario: pseud creation and playing with the default pseud
     And I fill in "Name" with "Me"
     And I check "Make this name default"
     And I fill in "Description" with "Something's cute"
-    And I press "Create"
+    And I press "Create Pseud"
   Then I should see "Pseud was successfully created."
     And I should be on the dashboard page for user "myself" with pseud "Me"
 
@@ -76,7 +76,7 @@ Scenario: Manage pseuds - add, edit
   When I follow "New Pseud"
     And I fill in "Name" with "My new name"
     And I fill in "Description" with "I wanted to add another name"
-    And I press "Create"
+    And I press "Create Pseud"
   Then I should be on the dashboard page for user "editpseuds" with pseud "My new name"
     And I should see "Pseud was successfully created."
     And I should see "My new name"
@@ -91,9 +91,9 @@ Scenario: Manage pseuds - add, edit
 
   # Try to create another pseud with the same name you already used.
   When I follow "New Pseud"
-  Then I should see "New pseud"
+  Then I should see "New Pseud"
   When I fill in "Name" with "My new name"
-    And I press "Create"
+    And I press "Create Pseud"
   Then I should see "You already have a pseud with that name."
 
   # Recheck various links.
@@ -103,9 +103,33 @@ Scenario: Manage pseuds - add, edit
     And I follow "Manage My Pseuds"
   Then I should see "Edit My new name"
 
-  # Edit your new pseud's name and description.
+  # Edit your new pseud with a blank name.
   When I follow "edit_my_new_name"
-    And I fill in "Description" with "I wanted to add another fancy name"
+    And I fill in "Description" with "I wanted to make my new name blank"
+    And I fill in "Name" with ""
+    And I press "Update"
+  Then I should not see "Pseud was successfully updated."
+    And I should see "can't be blank"
+    And I should see "can contain letters, numbers, spaces, underscores, and dashes"
+
+  # Check that the show button works and the pseud hasn't actually updated.
+  When I follow "Show"
+  Then I should be on the dashboard page for user "editpseuds" with pseud "My new name"
+  When I follow "Back To Pseuds"
+  Then I should see "Edit My new name"
+    And I should see "I wanted to add another name"
+    And I should not see "I wanted to make my new name blank"
+
+  # Edit your new pseud with an invalid name.
+  When I follow "edit_my_new_name"
+    And I fill in "Description" with "I wanted to make my new name smiley"
+    And I fill in "Name" with ":-)"
+    And I press "Update"
+  Then I should not see "Pseud was successfully updated."
+    And I should see "can contain letters, numbers, spaces, underscores, and dashes"
+
+  # Edit your new pseud with a valid name this time.
+  When I fill in "Description" with "I wanted to add another fancy name"
     And I fill in "Name" with "My new fancy name"
     And I press "Update"
   Then I should see "Pseud was successfully updated."
@@ -180,7 +204,7 @@ Scenario: Collections reflect pseud changes of moderators after the cache expire
   Then I should see "New members invited: before (myself)"
   When I select "Moderator" from "myself_role"
     And I submit with the 3rd button
-  Then I should see "Updated before."
+  Then I should see "Updated before (myself)."
   When I go to the collections page
   Then I should see "My Collection Thing"
     And I should see "before (myself)" within "#main"
@@ -254,6 +278,27 @@ Scenario: Edit pseud updates series blurbs
   When I follow "Series"
   Then I should see "Best Series by Me3 (Myself)"
 
+Scenario: Edit pseud updates gift blurbs
+  Given "giftee1" has the pseud "Me2"
+    And the user "giftee1" allows gifts
+    And I am logged in as "gifter"
+    And I set up the draft "GiftStory1"
+    And I give the work to "Me2 (giftee1)"
+    And I press "Post"
+    And I am logged in as "giftee1"
+  When I go to giftee1's gifts page
+  Then I should see "GiftStory1 by gifter for Me2 (giftee1)"
+  When I view my profile
+    And I follow "Manage My Pseuds"
+    And I follow "Edit Me2"
+    And I fill in "Name" with "Me3"
+    # Delay before renaming to make sure the cache is expired
+    And it is currently 1 second from now
+    And I press "Update"
+  Then I should see "Pseud was successfully updated."
+  When I go to giftee1's gifts page
+  Then I should see "GiftStory1 by gifter for Me3 (giftee1)"
+
 Scenario: Change details as an admin
 
   Given "someone" has the pseud "alt"
@@ -312,3 +357,19 @@ Scenario: Bookmarks reflect pseud changes immediately
     And I go to myself's bookmarks page
   Then I should see "Bookmarked by after (myself)"
     And I should not see "Bookmarked by before (myself)"
+
+Scenario: Chapter byline reflects pseud changes immediately
+
+  Given I am logged in as "myself"
+    And "myself" creates the pseud "before"
+    And I post the work "Title" using the pseud "before"
+    And I add the co-author "pikachu" to the work "Title"
+    And I post a chapter for the work "Title" as "before"
+  When I view the work "Title"
+    And I view the 2nd chapter
+  Then I should see "Chapter by before (myself)"
+  When it is currently 1 second from now
+    And "myself" changes the pseud "before" to "after"
+    And I view the work "Title"
+    And I view the 2nd chapter
+  Then I should see "Chapter by after (myself)"

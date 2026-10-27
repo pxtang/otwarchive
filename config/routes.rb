@@ -48,11 +48,12 @@ Rails.application.routes.draw do
 
   #### ERRORS ####
 
-  get '/403', to: 'errors#403'
-  get '/404', to: 'errors#404'
-  get '/422', to: 'errors#422'
-  get '/500', to: 'errors#500'
-  get '/auth_error', to: 'errors#auth_error'
+  get "/403", to: "errors#403"
+  get "/404", to: "errors#404"
+  get "/422", to: "errors#422"
+  get "/429", to: "errors#429"
+  get "/500", to: "errors#500"
+  get "/auth_error", to: "errors#auth_error"
   get "/timeout_error", to: "errors#timeout_error"
 
   #### DOWNLOADS ####
@@ -76,7 +77,11 @@ Rails.application.routes.draw do
   #### INVITATIONS ####
 
   resources :invitations
-  resources :user_invite_requests
+  resources :user_invite_requests do
+    collection do
+      patch :update
+    end
+  end
   resources :invite_requests, only: [:index, :create, :destroy] do
     collection do
       get :manage
@@ -165,6 +170,7 @@ Rails.application.routes.draw do
   end
 
   #### ADMIN ####
+  get "/admin_posts/drafts" => "admin_posts#drafts", as: :drafts_admin_posts
   resources :admin_posts do
     resources :comments do
       collection do
@@ -172,6 +178,11 @@ Rails.application.routes.draw do
         put :review_all
       end
     end
+    member do
+      put :post
+      get :preview
+    end
+    resources :kudos, only: [:index]
   end
 
   namespace :admin do
@@ -192,6 +203,13 @@ Rails.application.routes.draw do
     resources :spam, only: [:index] do
       collection do
         post :bulk_update
+      end
+    end
+    scope :notices do
+      resources :support_notices, path: "support" do
+        member do
+          get :confirm_delete
+        end
       end
     end
     resources :user_creations, only: [:destroy] do
@@ -227,7 +245,14 @@ Rails.application.routes.draw do
     end
     resources :api
   end
-  resources :admins, only: [:index]
+  resources :admins, only: [:index] do
+    resource :totp, controller: "admin/totp", only: [:create, :new] do
+      get :show_backup_codes
+      get :confirm_disable
+      post :disable
+      post :reauthenticate_create
+    end
+  end
 
   post '/admin/api/new', to: 'admin/api#create'
 
@@ -240,7 +265,7 @@ Rails.application.routes.draw do
   end
 
   # When adding new nested resources, please keep them in alphabetical order
-  resources :users, except: [:new, :create] do
+  resources :users, except: [:new, :create, :edit, :update] do
     member do
       get :change_email
       put :confirm_change_email
@@ -270,9 +295,7 @@ Rails.application.routes.draw do
       end
     end
     resource :creatorships, controller: "creatorships", only: [:show, :update]
-    resources :external_authors do
-      resources :external_author_names
-    end
+    resources :external_authors, only: [:index, :update]
     resources :favorite_tags, only: [:create, :destroy]
     resources :gifts, only: [:index]
     resource :inbox, controller: "inbox" do
@@ -291,7 +314,7 @@ Rails.application.routes.draw do
     end
     resources :nominations, controller: "tag_set_nominations", only: [:index]
     resources :preferences, only: [:index, :update]
-    resource :profile, only: [:show], controller: "profile" do
+    resource :profile, only: [:show, :edit, :update], controller: "profile" do
       collection do
         get :pseuds
       end
@@ -303,6 +326,7 @@ Rails.application.routes.draw do
     end
     resources :readings do
       collection do
+        get :confirm_clear
         post :clear
       end
     end
@@ -367,11 +391,11 @@ Rails.application.routes.draw do
       post :post
       put :post_draft
       get :navigate
+      patch :remove_user_creatorship
       get :edit_tags
-      get :preview_tags
       patch :update_tags
-      get :mark_for_later
-      get :mark_as_read
+      patch :mark_for_later
+      patch :mark_as_read
       get :confirm_delete
       get :share
     end
@@ -402,7 +426,6 @@ Rails.application.routes.draw do
     end
     resource :hit_count, controller: :hit_count, only: [:create]
     resources :kudos, only: [:index]
-    resources :links, controller: "work_links", only: [:index]
     resource :troubleshooting, controller: :troubleshooting, only: [:show, :update]
   end
 
@@ -410,6 +433,7 @@ Rails.application.routes.draw do
     member do
       get :preview
       post :post
+      patch :remove_user_creatorship
     end
     resources :comments
   end
@@ -429,6 +453,7 @@ Rails.application.routes.draw do
       get :confirm_delete
       get :manage
       post :update_positions
+      patch :remove_user_creatorship
     end
     resources :bookmarks
   end
@@ -458,14 +483,14 @@ Rails.application.routes.draw do
     resources :media
     resources :fandoms
     resources :people
-    resources :prompts
+    resources :prompts, except: [:index]
     resources :tags do
       resources :works
     end
     resources :participants, controller: "collection_participants", only: [:index, :update, :destroy] do
       collection do
-        get :add
-        get :join
+        post :add
+        post :join
       end
     end
     resources :items, controller: "collection_items" do
@@ -484,15 +509,15 @@ Rails.application.routes.draw do
     resources :assignments, controller: "challenge_assignments", only: [:index, :show] do
       collection do
         get :confirm_purge
-        get :generate
+        post :generate
         put :set
         post :purge
-        get :send_out
+        post :send_out
         put :update_multiple
-        get :default_all
+        patch :default_all
       end
       member do
-        get :default
+        patch :default
       end
     end
     resources :claims, controller: "challenge_claims" do
@@ -503,9 +528,9 @@ Rails.application.routes.draw do
     end
     resources :potential_matches do
       collection do
-        get :generate
-        get :cancel_generate
-        get :regenerate_for_signup
+        post :generate
+        post :cancel_generate
+        post :regenerate_for_signup
       end
     end
     resources :requests, controller: "challenge_requests"
@@ -582,11 +607,11 @@ Rails.application.routes.draw do
   resources :skins do
     member do
       get :preview
-      get :set
+      post :set
       get :confirm_delete
     end
     collection do
-      get :unset
+      post :unset
     end
   end
   resources :known_issues
@@ -622,10 +647,54 @@ Rails.application.routes.draw do
   end
 
   resources :abuse_reports, only: [:new, :create]
-  resources :external_authors do
-    resources :external_author_names
-  end
+  resources :external_authors, only: [:index, :update]
   resources :orphans, only: [:index, :new, :create]
+
+  HelpController::HELP_ACTIONS.each do |action|
+    get "/help/#{action}", to: "help##{action}"
+  end
+
+  # Redirects for moved help files
+  get "/help/chapter-title.html", to: redirect("/help/chapters_title")
+  get "/help/add-collectible-to-collection.html", to: redirect("/help/collectibles_add_to_collection")
+  get "/help/csv-download.html", to: redirect("/help/csv_download")
+  get "/first_login_help", to: redirect("/help/first_login")
+  get "/help/html-help.html", to: redirect("/help/html")
+  get "/help/people-search-all-fields.html", to: redirect("/help/people_search_all_fields")
+  get "/help/collection-preferences.html", to: redirect("/help/preferences_collection")
+  get "/help/comment-preferences.html", to: redirect("/help/preferences_comment")
+  get "/help/display-preferences.html", to: redirect("/help/preferences_display")
+  get "/help/misc-preferences.html", to: redirect("/help/preferences_misc")
+  get "/help/privacy-preferences.html", to: redirect("/help/preferences_privacy")
+  get "/help/work_title_format.html", to: redirect("/help/preferences_work_title_format")
+  get "/help/comments-moderated.html", to: redirect("/help/privacy_moderated_commenting")
+  get "/help/who-can-comment-on-this-work.html", to: redirect("/help/privacy_restricted_commenting")
+  get "/help/registered-users.html", to: redirect("/help/privacy_restricted_work")
+  get "/help/rte-help.html", to: redirect("/help/rte")
+  get "/help/skins-basics.html", to: redirect("/help/skins_basics")
+  get "/help/skins-creating.html", to: redirect("/help/skins_creating")
+  get "/help/skins-parents.html", to: redirect("/help/skins_parents")
+  get "/help/symbols-key.html", to: redirect("/help/symbols_key")
+  get "/help/tagset-about.html", to: redirect("/help/tag_sets_about")
+  get "/help/tagset-tag-associations.html", to: redirect("/help/tag_sets_associations")
+  get "/help/tagset-batch-load.html", to: redirect("/help/tag_sets_batch_load")
+  get "/help/additional-tags-help.html", to: redirect("/help/tags_additional")
+  get "/help/categories-help.html", to: redirect("/help/tags_categories")
+  get "/help/characters-help.html", to: redirect("/help/tags_characters")
+  get "/help/fandom-help.html", to: redirect("/help/tags_fandoms")
+  get "/help/rating-help.html", to: redirect("/help/tags_ratings")
+  get "/help/relationships-help.html", to: redirect("/help/tags_relationships")
+  get "/help/tag-search-results-help.html", to: redirect("/help/tags_search_results")
+  get "/help/tag-search-text-help.html", to: redirect("/help/tags_search_text")
+  get "/help/warning-help.html", to: redirect("/help/tags_warnings")
+  get "/help/add-work-to-assignment.html", to: redirect("/help/works_assignment")
+  get "/help/backdating-help.html", to: redirect("/help/works_backdating")
+  get "/help/languages-help.html", to: redirect("/help/works_languages")
+  get "/help/parent-works-help.html", to: redirect("/help/works_parents")
+  get "/help/recipients.html", to: redirect("/help/works_recipients")
+  get "/help/choosing-series.html", to: redirect("/help/works_series")
+  get "/help/work-skins.html", to: redirect("/help/works_skins")
+  get "/help/translation-link.html", to: redirect("/help/works_translation_link")
 
   get 'search' => 'works#search'
   post 'support' => 'feedbacks#create', as: 'feedbacks'
@@ -635,11 +704,11 @@ Rails.application.routes.draw do
   get "tos" => "home#tos"
   get "tos_faq" => "home#tos_faq"
   get 'unicorn_test' => 'home#unicorn_test'
-  get 'dmca' => 'home#dmca'
+  get "dmca", to: redirect("/takedown#dmca_policy")
+  get "takedown" => "home#takedown"
   get 'diversity' => 'home#diversity'
   get 'site_map' => 'home#site_map'
   get 'site_pages' => 'home#site_pages'
-  get 'first_login_help' => 'home#first_login_help'
   get 'token_dispenser' => 'home#token_dispenser'
   get 'delete_confirmation' => 'users#delete_confirmation'
   get 'activate/:id' => 'users#activate', as: 'activate'
@@ -669,7 +738,6 @@ Rails.application.routes.draw do
   #
   # Note written on August 1, 2017 during upgrade to Rails 5.1.
   get '/invite_requests/show' => 'invite_requests#show', as: :show_invite_request
-  get '/user_invite_requests/update' => 'user_invite_requests#update'
 
   patch '/admin/skins/update' => 'admin_skins#update', as: :update_admin_skin
 
@@ -689,7 +757,7 @@ Rails.application.routes.draw do
     tags_in_sets
     associated_tags
     noncanonical_tag
-    collection_fullname
+    collection_title
     open_collection_names
     collection_parent_name
     external_work

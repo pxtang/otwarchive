@@ -2,15 +2,8 @@
 <% if allow_tinymce?(controller) %>
   <%= yield :tinymce %>
 <% end %>
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js" type="text/javascript"></script>
-<script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.0/jquery-ui.min.js" type="text/javascript"></script>
-<!-- if user has googleapis blocked for some reason we need a fallback -->
-<script type="text/javascript">
-  if (typeof jQuery == 'undefined') {
-    document.write(unescape("%3Cscript src='/javascripts/jquery.min.js' type='text/javascript'%3E%3C/script%3E"));
-    document.write(unescape("%3Cscript src='/javascripts/jquery-ui.min.js' type='text/javascript'%3E%3C/script%3E"));
-  }
-</script>
+<script src="/javascripts/jquery.min.js" type="text/javascript"></script>
+<script src="/javascripts/jquery-ui.min.js" type="text/javascript"></script>
 
 <% if Rails.env.test? %>
   <!--
@@ -52,7 +45,7 @@
   <%= yield :tinymce_init %>
 <% end %>
 
-<% unless Rails.env.test? || current_user.try(:accepted_tos_version) == @current_tos_version || tos_exempt_page? %>
+<% unless current_user.try(:accepted_tos_version) == @current_tos_version || tos_exempt_page? %>
   <%= javascript_tag do %>
     // We can't rely on !window.localStorage to test localStorage support in
     // browsers like Safari 9, which technically support it, but which have a
@@ -77,23 +70,7 @@
       }
     }
 
-<!--     $j(document).ready(function() {
-      <% if current_user %>
-        <%# Users who haven't accepted this TOS need the popup. %>
-        $j("body").prepend("<%= escape_javascript(render "layouts/tos_prompt") %>");
-      <% elsif params[:tos] == "yes" %>
-        <%# Guests can bypass the popup using ?tos=yes in the URLs. %>
-        acceptTOS();
-      <% else %>
-        <%# Otherwise, guests who don't have the localStorage item or the
-            cookie need the popup.
-            We have to use JavaScript to remember their choice or risk issues
-            when full page caching is enabled. %>
-        if (localStorage.getItem("accepted_tos") !== "<%= @current_tos_version %>" && Cookies.get("accepted_tos") !== "<%= @current_tos_version %>") {
-          $j("body").prepend("<%= escape_javascript(render "layouts/tos_prompt") %>");
-        }
-      <% end %>
-    }); -->
+    <%# The self-hosted archive does not display the AO3 TOS popup. %>
   <% end %>
 <% end %>
 
