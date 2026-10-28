@@ -32,14 +32,15 @@ Bundler run inside the image, so no matching host Ruby installation is needed.
 ```sh
 docker version
 docker compose version
-git clone --branch codex/upstream-refresh-2026-10-26 https://github.com/pxtang/otwarchive.git
+git clone --branch master https://github.com/pxtang/otwarchive.git
 cd otwarchive
 mkdir -p backup
 ```
 
-The updated code is on `codex/upstream-refresh-2026-10-26`, not the fork's
-`master`. If it is merged into another branch later, use that branch instead.
-Keep this checkout on the server: the app containers mount and run its files.
+The fork's default branch is `master` and includes the tested restore changes.
+The integration history is also retained on
+`codex/upstream-refresh-2026-10-26`. Keep this checkout on the server: the app
+containers mount and run its files.
 
 Copy the original backup to `backup/ao3_db_vol_20250501.tar` in the new checkout.
 Keep an independent original elsewhere. `backup/` is excluded from Git and
@@ -279,14 +280,11 @@ run will be replayed immediately when it restarts. Keep Redis running and its
 data intact. The restore configuration deliberately excludes mail queues from
 its worker, so starting this service does not enable email processing.
 
-The current local configuration puts Resque in the `manual` Compose profile
-and removes it from the dependencies of `web`. With that layout, starting
-`web` alone does not start Resque. A fresh clone may still have the earlier
-`dev` profile layout, where `web` depends on Resque and starts it automatically.
-For controlled startup in either layout, start dependencies first, then use
-`up -d --no-deps web` and explicitly start `resque` when wanted. Starting the
-website does not stop an already running worker. For automatic updates, leave
-Resque running.
+Resque is in the `manual` Compose profile and is not a dependency of `web`.
+Starting `web` alone therefore does not start Resque. Explicitly naming
+`resque` starts it; enabling the `manual` profile also includes it. Starting
+the website does not stop an already running worker. For automatic updates,
+leave Resque running.
 
 Docker Desktop can start individual existing containers, including Resque,
 regardless of this Compose profile. Starting a whole application from its UI

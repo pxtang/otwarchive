@@ -88,13 +88,12 @@ services:
       - redis
       - es
       - mc
-      - resque
     # Make `docker compose attach web` work for debugging
     stdin_open: true
     tty: true
   resque:
     profiles:
-      - dev
+      - manual
     build:
       context: .
       dockerfile: ./config/docker/Dockerfile
