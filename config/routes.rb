@@ -245,14 +245,7 @@ Rails.application.routes.draw do
     end
     resources :api
   end
-  resources :admins, only: [:index] do
-    resource :totp, controller: "admin/totp", only: [:create, :new] do
-      get :show_backup_codes
-      get :confirm_disable
-      post :disable
-      post :reauthenticate_create
-    end
-  end
+  resources :admins, only: [:index]
 
   post '/admin/api/new', to: 'admin/api#create'
 

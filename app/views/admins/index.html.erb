@@ -32,25 +32,6 @@
       </dd>
     </div>
 
-    <div class="verification wrapper">
-      <dt><%= t(".account.totp.label") %></dt>
-      <% if current_admin.totp_enabled? %>
-        <dd>
-          <p><%= t(".account.totp.enabled") %></p>
-          <p>
-            <%= link_to t(".account.totp.disable_totp"), confirm_disable_admin_totp_path(current_admin) %>
-          </p>
-          <p>
-            <%= link_to t(".account.totp.regenerate_backup_codes"), show_backup_codes_admin_totp_path(current_admin) %>
-          </p>
-        </dd>
-      <% else %>
-        <dd>
-          <p><%= t(".account.totp.disabled") %></p>
-          <p><%= link_to t(".account.totp.enable_totp"), new_admin_totp_path(current_admin) %></p>
-        </dd>
-      <% end %>
-    </div>
   </dl>
 </div>
 <!--/content-->

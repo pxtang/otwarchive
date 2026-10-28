@@ -165,14 +165,7 @@ class ApplicationController < ActionController::Base
     end
   end
 
-  # Allow totp_attempt parameter in the :sign_in controller for admin two-factor authentication
-  before_action :configure_permitted_parameters, if: :devise_controller?
-
   protected
-
-  def configure_permitted_parameters
-    devise_parameter_sanitizer.permit(:sign_in, keys: [:totp_attempt])
-  end
 
   def logged_in?
     user_signed_in?
@@ -219,13 +212,7 @@ public
   end
 
   include PathCleaner
-  # Warning: Admin 2FA bypasses this method in SessionsController#authenticate_admin_with_otp_two_factor
   def after_sign_in_path_for(resource)
-    if resource.respond_to?(:pwned?) && resource.pwned?
-      set_flash_message! :alert, :warn_pwned
-      return change_password_user_path(current_user) if resource.is_a?(User)
-    end
-
     return admins_path if resource.is_a?(Admin)
 
     relative_path(params[:return_to]) || user_path(current_user)
