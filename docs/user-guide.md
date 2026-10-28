@@ -297,12 +297,21 @@ the commands above; a plain Compose command targets a different project.
 ## Memcached
 
 The `mc` container is a temporary cache, separate from Redis and the database.
-The restored development configuration points to it, but Rails uses a null
-cache unless `tmp/caching-dev.txt` exists when the processes start. Creating
-that toggle affects development projects sharing this checkout; restart both
-web and Resque to apply a change consistently. Some features use the cache for
+The development configuration uses Memcached by default. The restored copy
+points to `mc:11211`; web and Resque share that cache. This setting applies to
+development projects sharing this checkout and no longer uses the
+`tmp/caching-dev.txt` toggle. Some features use the cache for
 temporary data, so a null cache can affect more than performance. Cached data
 can also disappear when Memcached restarts or evicts entries.
+
+To verify the restored web container can use the cache, run:
+
+```sh
+docker exec otwarchive-restore-web-1 bundle exec rails runner 'puts Rails.cache.class; puts Rails.cache.write("cache-check", "ok", expires_in: 1.minute); puts Rails.cache.read("cache-check"); Rails.cache.delete("cache-check")'
+```
+
+The output should include `ActiveSupport::Cache::MemCacheStore`, `true`, and
+`ok`. The command removes its temporary test value afterward.
 
 On the restored copy, an idle snapshot showed Memcached at about 1.7 MiB and
 0.01% CPU, while Resque used about 483 MiB and 0.11% CPU. These are snapshots,

@@ -16,24 +16,12 @@ Rails.application.configure do
   # Enable server timing.
   config.server_timing = true
 
-  # Enable/disable Action Controller caching. By default Action Controller caching is disabled.
-  # Run rails dev:cache to toggle Action Controller caching.
-  if Rails.root.join("tmp/caching-dev.txt").exist?
-    config.action_controller.perform_caching = true
-    config.action_controller.enable_fragment_cache_logging = true
-
-    memcached_servers = "127.0.0.1:11211"
-    memcached_servers = YAML.load_file(Rails.root.join("config/local.yml")).fetch("MEMCACHED_SERVERS", memcached_servers) if File.file?(Rails.root.join("config/local.yml"))
-    config.cache_store = :mem_cache_store, memcached_servers,
-                         { namespace: "ao3-v2-dev", compress: true, pool: { size: 10 } }
-    config.public_file_server.headers = {
-      "cache-control" => "public, max-age=#{2.days.to_i}"
-    }
-  else
-    config.action_controller.perform_caching = memcache_on
-
-    config.cache_store = :null_store
-  end
+  # Use the same shared cache for web and background worker processes.
+  config.action_controller.perform_caching = true
+  memcached_servers = "127.0.0.1:11211"
+  memcached_servers = YAML.load_file(Rails.root.join("config/local.yml")).fetch("MEMCACHED_SERVERS", memcached_servers) if File.file?(Rails.root.join("config/local.yml"))
+  config.cache_store = :mem_cache_store, memcached_servers,
+                       { namespace: "ao3-v2-dev", compress: true, pool: { size: 10 } }
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
   config.active_storage.service = :local
