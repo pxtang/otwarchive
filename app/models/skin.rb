@@ -493,7 +493,7 @@ class Skin < ApplicationRecord
           skin.ie_condition = skin_ie
           skin.unusable = true
           skin.official = true
-          skin.icon.attach(io: File.open("#{version_dir}preview.png", "rb"), content_type: "image/png", filename: "preview.png")
+          skin.icon = { io: File.open("#{version_dir}preview.png", "rb"), content_type: "image/png", filename: "preview.png" }
           skin.save!(validate: false)
           skins << skin
         end
@@ -507,7 +507,7 @@ class Skin < ApplicationRecord
           top_skin = Skin.new(title: "Archive #{version}", css: "", description: "Version #{version} of the default Archive style.",
                               public: true, role: "site", media: ["screen"])
         end
-        top_skin.icon.attach(io: File.open("#{version_dir}preview.png", "rb"), content_type: "image/png", filename: "preview.png")
+        top_skin.icon = { io: File.open("#{version_dir}preview.png", "rb"), content_type: "image/png", filename: "preview.png" }
         top_skin.official = true
         top_skin.save!(validate: false)
         skins.each_with_index do |skin, index|

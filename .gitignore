@@ -79,3 +79,6 @@ coverage
 redis-cucumber-dump.rdb
 
 .rspec
+
+# Local database restore archives
+/backup/

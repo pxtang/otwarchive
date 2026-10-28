@@ -3,7 +3,8 @@
 Upstream `otwcode/otwarchive` master was merged through `aa99cd45c`
 (AO3-7619 Update css_parser to 3.2.0). The pre-merge commit is preserved on
 `codex/backup-before-upstream-2026-10-26`; integration work is on
-`codex/upstream-refresh-2026-10-26`. Nothing has been pushed.
+`codex/upstream-refresh-2026-10-26`. The merge was pushed to that branch on
+the fork; master was left unchanged.
 
 ## Merge decisions
 
@@ -28,18 +29,63 @@ custom Resque scripts, YAML structure, service references and runtime-version
 consistency were checked locally. The fork-specific changes pass Git's
 whitespace check. Upstream itself contains whitespace warnings.
 
-This WSL distro has Ruby 3.0.2 and Bundler 2.3.5; its Docker CLI reports that
-Docker Desktop WSL integration is unavailable. No image build, Rails boot,
-application tests, database migration or volume compatibility test has been
-performed. Those remain necessary before calling this deployment-ready.
+Docker Desktop WSL integration is now enabled. The application image built
+successfully using the locked dependencies. A fresh sandbox database was
+created from the schema, migrated, seeded with fixtures, and indexed. Puma,
+Resque and its scheduler are running. HTTP checks passed for the homepage,
+CSS/JavaScript, work browsing and reading, work and tag search, collections,
+login and the authenticated profile. Worker failure count was zero after setup.
+This verifies a fresh installation, not compatibility with the older hosted
+instance's backup. No existing archive volume was mounted by the sandbox.
+The older hosted backup was subsequently tested in another isolated project;
+see [restore verification](restore-verification.md) for results and commands.
 
-From Windows with Docker Desktop available, start with checks that do not
-start services or access volumes:
+The first boot exposed a Codespaces configuration bug: Compose supplies an
+empty `CODESPACES` variable, which Ruby treats as truthy. That added an invalid
+hostname restriction. Development settings now require a nonblank value before
+applying Codespaces settings.
 
-```powershell
-docker compose config --quiet
-docker compose build web test
+## Running the fresh sandbox
+
+Open <http://localhost:3001>. The sandbox uses project name `otwarchive-sandbox`
+and the additional `docker-compose.sandbox.yml` file. Its dependencies expose
+no host ports; the web port binds to localhost only. Its configuration mounts
+use the Docker templates plus `config/docker/sandbox-local.yml`, leaving the
+existing local configuration files alone. Database, Redis and Elasticsearch
+volumes have the `otwarchive-sandbox_` prefix.
+
+Fixture account: username `testuser`, password `testuser`. Login works, but the
+application warns that this fixture password is breached and opens the password
+change page. Choose a unique password if you keep using the account.
+
+Run these commands from the repository directory in Ubuntu or PowerShell:
+
+```sh
+# Start the already initialized sandbox:
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml up -d --build web
+
+# View logs:
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml logs -f web resque
+
+# Stop the sandbox while retaining its data:
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml stop
 ```
+
+Only for initializing an EMPTY, disposable sandbox database (this resets data):
+
+```sh
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml build web resque
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml up -d db redis es mc
+# Wait for MariaDB and Elasticsearch to be ready, then:
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml run --rm --no-deps web script/reset_database.sh
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml up -d web
+docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml exec web bundle exec rake search:run_world_index_queue
+```
+
+Continue using the sandbox project name and both Compose files. A plain
+`docker compose up` targets the original project and its existing volumes.
+The checkout and generated files under it are shared between projects; keep
+the old web/worker containers stopped while testing this upgraded checkout.
 
 ## Existing volume: next phase
 

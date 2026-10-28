@@ -1,0 +1,6 @@
+ES_URL: es:9200
+MEMCACHED_SERVERS: mc:11211
+APP_HOST: localhost:3001
+APP_URL: http://localhost:3001
+PERMITTED_HOSTS: [localhost, 127.0.0.1]
+PERFORM_DELIVERIES: false

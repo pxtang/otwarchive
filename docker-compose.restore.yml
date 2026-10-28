@@ -1,0 +1,18 @@
+# Use with project otwarchive-restore, the base file, and the sandbox file.
+volumes:
+  my-datavolume:
+    external: true
+    name: otwarchive-restore_my-datavolume
+services:
+  web:
+    image: otwarchive-sandbox-web
+    ports: !override
+      - "127.0.0.1:3002:3000"
+    volumes:
+      - ./config/docker/restore-local.yml:/otwa/config/local.yml:ro
+  resque:
+    image: otwarchive-sandbox-resque
+    environment:
+      QUEUE: reindex_world,reindex_high,reindex_low,reindex_stats,reindex_users,utilities,tag_counts,active_storage
+    volumes:
+      - ./config/docker/restore-local.yml:/otwa/config/local.yml:ro

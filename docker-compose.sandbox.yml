@@ -1,0 +1,33 @@
+# Fresh-instance checks only. Always use the dedicated project name:
+# docker compose -p otwarchive-sandbox -f docker-compose.yml -f docker-compose.sandbox.yml ...
+services:
+  db:
+    ports: !reset []
+  redis:
+    ports: !reset []
+    volumes:
+      - redis-data:/data
+  es:
+    ports: !reset []
+  mc:
+    ports: !reset []
+  web:
+    ports: !override
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ./config/docker/database.yml:/otwa/config/database.yml:ro
+      - ./config/docker/redis.yml:/otwa/config/redis.yml:ro
+      - ./config/docker/sandbox-local.yml:/otwa/config/local.yml:ro
+  resque:
+    volumes:
+      - ./config/docker/database.yml:/otwa/config/database.yml:ro
+      - ./config/docker/redis.yml:/otwa/config/redis.yml:ro
+      - ./config/docker/sandbox-local.yml:/otwa/config/local.yml:ro
+  test:
+    ports: !reset []
+    volumes:
+      - ./config/docker/database.yml:/otwa/config/database.yml:ro
+      - ./config/docker/redis.yml:/otwa/config/redis.yml:ro
+      - ./config/docker/sandbox-local.yml:/otwa/config/local.yml:ro
+  chrome:
+    ports: !reset []

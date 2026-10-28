@@ -92,7 +92,7 @@ Rails.application.configure do
   config.hosts.clear
 
   # GitHub codespaces support
-  if ENV["CODESPACES"]
+  if ENV["CODESPACES"].present?
     # Unfortunately, the environment variables we need to set a specific codespace prefix are not available soon enough.
     # Instead, we target the GitHub preview domain. Accessing the URL requires logging in with the right GitHub account
     # anyways, so this should be OK.

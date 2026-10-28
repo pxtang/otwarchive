@@ -1,0 +1,13 @@
+.git
+log
+tmp
+storage
+logins.txt
+.env
+.env.*
+config/database.yml
+config/local.yml
+config/redis.yml
+
+# Local database restore archives
+backup
