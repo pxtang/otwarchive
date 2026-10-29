@@ -151,3 +151,104 @@ the final heading-scope regression. The final focused core run
 the unchanged foundation suite had previously passed **12 examples, 0 failures**.
 `git diff --check` passed. Acquisition diagnostics remain read-only developer
 tools; the native inspector is M2, and content saving remains disabled until M3.
+
+## M2 native review (saving disabled)
+
+Authorized owners now have the third Post entry **Magic Import work**. Set
+`AO3_BACKUP_ENABLED=true` and comma-separated `AO3_BACKUP_OWNER_IDS`; banned or
+suspended accounts are denied. Every session read, edit, progress poll, retry,
+dispatch recovery and cancellation checks the current owner through a scoped
+lookup. Routes retain the host CSRF protection. There is no content-save route.
+
+New integration details:
+
+- The greeting partial adds one owner-visible link after Import Work.
+- Engine controllers forward named host route helpers through `main_app`, without
+  replacing the engine's `_routes` context. They use the host application layout.
+- A tiny engine-only fandom menu partial performs read-only Media queries because
+  upstream `Media.for_menu` can create an Uncategorized Fandoms tag on a fresh DB.
+  It does not alter ordinary host menus or globally disable model callbacks.
+- Explicit JSON attributes handle both native MySQL JSON and MariaDB's LONGTEXT
+  JSON alias. Session and snapshot data live in separate additive tables.
+- Selection request parameters are filtered. Engine metadata reads/writes use
+  thread-local logger silence so source manifests and edited choices do not leak
+  into SQL debug logs; model inspection also filters those attributes.
+
+`SessionService` injects clock/dispatcher/policy. A new session durably starts
+queued with dispatch intent before Redis is contacted. Failure stays visibly
+queued and offers “Try dispatch again”. Fetch jobs use the existing `utilities`
+queue with only session ID and generation. Each delivery claims queued → fetching
+under a short lock, releases it before solver I/O, and accepts the result only if
+state/generation/expiry still match. Duplicate deliveries and late generations
+cannot overwrite cancellation, retry, expiry or a ready review. A snapshot is
+immutable; selection revisions update separately under owner/revision/digest checks.
+Retry creates a new generation and discards the old temporary review; at most
+three generations are allowed per session, and Retry-After is honored with an
+injected-clock timestamp. User.current_user is restored on every worker exit.
+
+Review controls expose original values next to editable choices, including source
+author/tag names after renaming. Category/search filters and select/clear-visible
+controls operate on the same ordered list without discarding hidden choices.
+Metadata removal requires explicit title/language replacements. Chapters retain
+source order and bodies while title, summary and note selections remain editable.
+The exact proposed output uses only retained local values and shows externally
+hosted media, source completion and source word count as source context. The Save
+button is disabled, with a prominent review-only notice.
+
+Reviews expire 24 hours after creation. Access/worker expiry and cancellation
+remove snapshots and editable choices. M4's scheduled sweeping and worker-death
+lease recovery are deferred; an abandoned fetching generation can already be
+explicitly retried/cancelled. M3 will add content saving/publication. No M3 work
+is enabled by this UI.
+
+M2 validation (all via isolated Compose `exec -T test`):
+
+- `bundle exec rspec spec/ao3_backup`: **78 examples, 0 failures** before the final
+  private-metadata SQL-log regression. Includes M0/M1 and native review requests.
+- Chromium uses the existing `chrome` service, actual archive login, a real Redis
+  `utilities` job and WebMock solver response. It observes queued/fetching/ready,
+  filters/deselects fandoms, edits title/author, removes summary, applies a revision,
+  checks no refetch, and verifies zero Work/Chapter/Tag/Tagging/Creatorship/Series writes.
+- The browser fixture loads the normal archive skins and asserts their rendered
+  font, then captures styled review areas at desktop and mobile sizes in
+  `tmp/magic-import-review-{desktop,mobile}.png`.
+- Request/worker proofs cover cross-owner denial, enabled CSRF rejection, malformed
+  nested payloads, stale revision/digest, dispatch outage recovery, duplicate/stale
+  jobs, cancel/expiry during fetch, immutable snapshots, explicit removals and
+  rate-limit wait/retry boundaries. No automated source fetch uses the live solver.
+
+For the optional isolated development preview, the same overlay supplies web port
+3003, a separate PID file and a `utilities`-only worker command (no scheduler).
+It uses `otwarchive_development` within the isolated project's DB and a separate
+preview local configuration; tests continue to use `otwarchive_test`. Set
+`MAGIC_IMPORT_PREVIEW_OWNER_IDS` when starting web/resque and append the optional
+import sidecar overlay. Initialize only this fresh isolated development database
+with the normal schema/migrations/skin setup. Never use the restored stack for
+these setup commands. Avoid automated tests while operating the preview: the host
+suite flushes the isolated project's shared Redis/cache even though its SQL
+cleaner uses the separate test database.
+
+Final focused M2 run after SQL-log privacy guard:
+`bundle exec rspec spec/ao3_backup/review_spec.rb` — **17 examples, 0 failures**.
+
+Independent M2 review found one final malformed-input gap: an omitted tag keep
+boolean now returns a typed rejected edit. The final focused review suite passed
+**18 examples, 0 failures**, including unchanged revision/digest/snapshot and zero
+archive writes for that case. The full **78/78** run predates the private SQL-log
+and omitted-keep regressions; both are included in the final focused **18/18**.
+Production-like `CI=true` eager loading and host route-helper availability passed.
+Independent milestone review approved M2; implementation pauses here for UI
+inspection. No content-save endpoint or M3 behavior is enabled.
+
+Start the initialized isolated preview (replace the owner ID if needed):
+
+```sh
+MAGIC_IMPORT_PREVIEW_OWNER_IDS=1 docker compose -p otwarchive-magic-import-test \
+  -f docker-compose.yml -f docker-compose.magic-import-test.yml \
+  -f docker-compose.import.yml up -d --no-build web resque
+```
+
+Open `http://localhost:3003/backup_imports` with the separately supplied local
+preview account. Credentials are runtime-only and are not committed. The prepared
+sample review uses invented fixture text; entering a real public work URL uses the
+configured solver. Saving remains disabled for both.

@@ -1,0 +1,23 @@
+<style>
+  .magic-import .intro { max-width: 65em; }
+  .magic-import .muted { color: #555; font-size: .9em; }
+  .magic-import .toolbar { display: flex; flex-wrap: wrap; gap: .6em; align-items: center; margin: 1em 0; }
+  .magic-import .toolbar input, .magic-import .toolbar select { width: auto; max-width: 100%; }
+  .magic-import .tag-candidates { list-style: none; margin: 0; padding: 0; }
+  .magic-import .tag-candidate { display: grid; grid-template-columns: 2em minmax(10em, 1fr) minmax(9em, 15em); gap: .5em; align-items: start; border-top: 1px solid #ddd; padding: .7em .2em; }
+  .magic-import .tag-candidate[hidden] { display: none; }
+  .magic-import .tag-candidate input[type=text] { width: 95%; }
+  .magic-import .badge { display: inline-block; background: #eee; border-radius: .3em; padding: .1em .4em; font-size: .85em; margin: .1em; }
+  .magic-import .author .badge { background: #f4e6df; }
+  .magic-import .field { padding: .7em 0; border-bottom: 1px solid #ddd; }
+  .magic-import .field > label { display: block; font-weight: bold; margin-bottom: .3em; }
+  .magic-import .field textarea { width: 97%; min-height: 5em; }
+  .magic-import .field input[type=text] { width: 95%; }
+  .magic-import .keep { display: inline-block; margin: .3em 1em .3em 0; }
+  .magic-import details { margin: .6em 0; }
+  .magic-import pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12em; overflow-y: auto; }
+  .magic-import .preview { border: 1px solid #ccc; background: #fafafa; padding: 1.2em; margin: 1em 0; }
+  .magic-import .preview h3 { margin-top: .5em; }
+  .magic-import .chapter { border-top: 1px solid #ccc; padding-top: .8em; }
+  @media (max-width: 45em) { .magic-import .tag-candidate { grid-template-columns: 2em 1fr; } .magic-import .tag-status { grid-column: 2; } }
+</style>

@@ -20,9 +20,24 @@ services:
       - ./config/docker/sandbox-local.yml:/otwa/config/local.yml:ro
   web:
     image: otwarchive-sandbox-web
+    command: bundle exec rails server -p 3000 -b 0.0.0.0 -P tmp/pids/magic-import-preview.pid
+    environment:
+      AO3_BACKUP_ENABLED: "true"
+      AO3_BACKUP_OWNER_IDS: ${MAGIC_IMPORT_PREVIEW_OWNER_IDS:-}
     ports: !override
       - "127.0.0.1:3003:3000"
     volumes:
       - ./config/docker/database.yml:/otwa/config/database.yml:ro
       - ./config/docker/redis.yml:/otwa/config/redis.yml:ro
-      - ./config/docker/sandbox-local.yml:/otwa/config/local.yml:ro
+      - ./config/docker/magic-import-preview-local.yml:/otwa/config/local.yml:ro
+  resque:
+    image: otwarchive-sandbox-web
+    command: bundle exec rake environment resque:work
+    environment:
+      QUEUE: utilities
+      AO3_BACKUP_ENABLED: "true"
+      AO3_BACKUP_OWNER_IDS: ${MAGIC_IMPORT_PREVIEW_OWNER_IDS:-}
+    volumes:
+      - ./config/docker/database.yml:/otwa/config/database.yml:ro
+      - ./config/docker/redis.yml:/otwa/config/redis.yml:ro
+      - ./config/docker/magic-import-preview-local.yml:/otwa/config/local.yml:ro

@@ -1,0 +1,48 @@
+<%= render "styles" %>
+<div class="magic-import" id="magic-import-review" data-state="<%= @import_session.state %>">
+  <h2 class="heading"><%= t("ao3_backup.title") %></h2>
+  <p><%= link_to "Inspect another work", main_app.ao3_backup_path %> · <%= link_to "Source work #{@import_session.source_work_id}", @import_session.canonical_url, rel: "noreferrer noopener", target: "_blank" %></p>
+  <p class="notice">Review only: saving to the archive is not enabled yet. No works, chapters, or tags have been created.</p>
+  <% if %w[queued fetching].include?(@import_session.state) %>
+    <div role="status" aria-live="polite">
+      <h3 class="heading"><%= @import_session.state == "queued" ? "Waiting to fetch" : "Fetching source work" %></h3>
+      <p><%= @import_session.dispatch_pending ? "Dispatch is pending. The review remains safely queued until a worker accepts it." : "The background worker will fetch and inspect all published chapters. This page updates automatically." %></p>
+      <% if @import_session.error_message %><p class="error"><%= @import_session.error_message %></p><% end %>
+      <p><%= link_to "Refresh progress", import_session_path(@import_session) %></p>
+      <% if @import_session.dispatch_pending %><%= button_to "Try dispatch again", recover_dispatch_import_session_path(@import_session) %><% end %>
+    </div>
+  <% elsif @import_session.state == "ready" %>
+    <p class="muted">Snapshot captured <%= @snapshot.retrieved_at.utc.strftime("%Y-%m-%d %H:%M UTC") %> · <%= @snapshot.manifest["published_chapters"] %> published chapters · Review revision <%= @import_session.selection_revision %> · Expires <%= @import_session.expires_at.utc.strftime("%Y-%m-%d %H:%M UTC") %></p>
+    <p class="muted">Fetched completion: <%= @snapshot.manifest["complete"] ? "Complete" : "Incomplete" %> (<%= @snapshot.manifest["published_chapters"] %>/<%= @snapshot.manifest.dig("scalars", "expected_chapters") || "?" %>) · Source word count: <%= @snapshot.manifest["source_word_count"] || "Not provided" %>. Local word counts will be computed from the selected content in a future save.</p>
+    <%= render "review" %>
+  <% elsif @import_session.state == "fetch_failed" %>
+    <h3 class="heading">The work could not be inspected</h3>
+    <p class="error"><%= @import_session.error_message %> (<%= @import_session.error_code %>)</p>
+    <% if @import_session.retry_not_before %><p>Upstream asks you to wait until <%= @import_session.retry_not_before.utc.strftime("%Y-%m-%d %H:%M:%S UTC") %> before retrying.</p><% end %>
+  <% else %>
+    <h3 class="heading">Review <%= @import_session.state %></h3>
+    <p>Temporary source data and choices have been removed. Start another review to inspect this work again.</p>
+  <% end %>
+  <% unless %w[expired cancelled].include?(@import_session.state) %>
+    <div class="toolbar">
+      <%= button_to "Cancel review", cancel_import_session_path(@import_session), form: { class: "inline" } %>
+      <% if @import_session.generation < Ao3Backup::SessionService::MAX_GENERATIONS %>
+        <%= button_to "Fetch a new snapshot", retry_fetch_import_session_path(@import_session), form: { class: "inline" }, disabled: @import_session.retry_not_before && Time.current < @import_session.retry_not_before, data: { confirm: "Discard this review's choices and fetch a new source snapshot?" } %>
+      <% end %>
+    </div>
+  <% end %>
+</div>
+<% if %w[queued fetching].include?(@import_session.state) %>
+<script>
+(function () {
+  var current = <%= raw @import_session.state.to_json %>;
+  function poll() {
+    fetch(<%= raw import_session_path(@import_session, format: :json).to_json %>, {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+      .then(function (response) { if (!response.ok) throw new Error('status unavailable'); return response.json(); })
+      .then(function (data) { if (data.state !== current) window.location.reload(); else window.setTimeout(poll, 2000); })
+      .catch(function () { window.setTimeout(poll, 5000); });
+  }
+  window.setTimeout(poll, 1500);
+})();
+</script>
+<% end %>

@@ -1,0 +1,25 @@
+<%= render "styles" %>
+<div class="magic-import">
+  <h2 class="heading"><%= t("ao3_backup.title") %></h2>
+  <p class="intro">Inspect a public AO3 work, then choose and edit its metadata before importing. A chapter URL retrieves the whole published work.</p>
+  <p class="notice">Review only: saving to the archive is not enabled yet. No works, chapters, or tags will be created.</p>
+  <%= form_tag import_sessions_path, class: "simple post" do %>
+    <fieldset>
+      <legend>Source work</legend>
+      <dl>
+        <dt><%= label_tag :source_url, "AO3 work or chapter URL" %></dt>
+        <dd><%= url_field_tag :source_url, params[:source_url], required: true, placeholder: "https://archiveofourown.org/works/…", size: 70 %></dd>
+      </dl>
+      <p class="muted">Fetching runs in the background. You can review the same snapshot without fetching it again. Reviews expire after 24 hours.</p>
+      <p class="submit actions"><%= submit_tag "Fetch and inspect" %></p>
+    </fieldset>
+  <% end %>
+  <% if @sessions.any? %>
+    <h3 class="heading">Recent reviews</h3>
+    <ul class="index group">
+      <% @sessions.each do |session| %>
+        <li><%= link_to "AO3 work #{session.source_work_id}", import_session_path(session) %> — <%= session.state.humanize %> <span class="muted">(<%= session.created_at.utc.strftime("%Y-%m-%d %H:%M UTC") %>)</span></li>
+      <% end %>
+    </ul>
+  <% end %>
+</div>

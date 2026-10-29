@@ -1,0 +1,7 @@
+# Isolated Magic Import development preview only.
+ES_URL: es:9200
+MEMCACHED_SERVERS: mc:11211
+APP_HOST: localhost:3003
+APP_URL: http://localhost:3003
+PERMITTED_HOSTS: [localhost, 127.0.0.1]
+PERFORM_DELIVERIES: false

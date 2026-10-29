@@ -1,0 +1,252 @@
+require "spec_helper"
+
+RSpec.describe "Magic Import review lifecycle" do
+  include MagicImportFixtures
+  let(:owner) { create(:user) }
+  let(:now) { Time.utc(2026, 10, 28, 12) }
+  let(:clock) { -> { now } }
+  let(:dispatcher) { ->(_id, _generation) { true } }
+  let(:service) { Ao3Backup::SessionService.new(clock: clock, dispatcher: dispatcher) }
+  let(:session) { service.start(owner: owner, url: captured.identity.canonical_url) }
+  let(:provider) { instance_double(Ao3Backup::Provider, call: captured) }
+  let(:job) { Ao3Backup::FetchJob.new(provider: provider, clock: clock) }
+
+  def counts
+    [Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)
+  end
+
+  it "queues only the session ID and generation on the existing utilities queue" do
+    previous_inline = Resque.inline
+    Resque.inline = false
+    session = Ao3Backup::SessionService.new(clock: clock).start(owner: owner, url: captured.identity.canonical_url)
+    expect(Resque.peek(:utilities)).to include("class" => "Ao3Backup::FetchJob", "args" => [session.id, 1])
+    expect(session.state).to eq("queued")
+    expect(session.dispatch_pending).to eq(false)
+  ensure
+    Resque.inline = previous_inline
+  end
+
+  it "keeps durable queued intent when Redis dispatch fails and recovers without refetching" do
+    failed = Ao3Backup::SessionService.new(clock: clock, dispatcher: ->(*) { raise Redis::CannotConnectError })
+    session = failed.start(owner: owner, url: captured.identity.canonical_url)
+    expect(session).to have_attributes(state: "queued", dispatch_pending: true, error_code: "dispatch_failed")
+    service.dispatch(session)
+    expect(session.reload).to have_attributes(state: "queued", dispatch_pending: false, generation: 1)
+  end
+
+  it "creates an immutable snapshot and editable selection without any content/tag writes" do
+    session
+    before_counts = counts
+    job.call(session.id, 1)
+    expect(session.reload).to have_attributes(state: "ready", selection_revision: 0, snapshot_digest: captured.digest)
+    expect(counts).to eq(before_counts)
+    snapshot = session.current_snapshot
+    expect { snapshot.update!(digest: "different") }.to raise_error(ActiveRecord::ReadOnlyRecord)
+    service.update_selection(session, revision: 0, digest: captured.digest,
+                             edits: { "tags" => [], "scalars" => { "summary" => { "keep" => false } } })
+    expect(session.reload.selection_revision).to eq(1)
+    expect(Ao3Backup::SelectionPolicy.new.proposed(session.selection)["tags"]).to eq([])
+    expect(session.current_snapshot.reload.manifest).to eq(snapshot.manifest)
+    expect(counts).to eq(before_counts)
+  end
+
+  it "does not copy temporary source metadata into SQL debug logs" do
+    session
+    output = StringIO.new
+    previous_logger = ActiveRecord::Base.logger
+    ActiveRecord::Base.logger = ActiveSupport::Logger.new(output)
+    ActiveRecord::Base.logger.level = Logger::DEBUG
+    job.call(session.id, 1)
+    service.update_selection(session.reload, revision: 0, digest: captured.digest, edits: { "tags" => [] })
+    expect(session.reload.state).to eq("ready")
+    expect(output.string).not_to include("Invented prose", "Invented_Author", "Invented summary")
+  ensure
+    ActiveRecord::Base.logger = previous_logger
+  end
+
+  it "does not hold the session SQL lock or start another transaction during source I/O" do
+    session
+    outer = Work.connection.open_transactions
+    expect(provider).to receive(:call) do
+      expect(Work.connection.open_transactions).to eq(outer)
+      captured
+    end
+    job.call(session.id, 1)
+    expect(session.reload.state).to eq("ready")
+  end
+
+  it "ignores duplicate deliveries and rejects stale selection revision or digest" do
+    job.call(session.id, 1)
+    expect(provider).not_to receive(:call)
+    job.call(session.id, 1)
+    [[1, captured.digest], [0, "wrong"], ["invalid", captured.digest]].each do |revision, digest|
+      expect { service.update_selection(session, revision: revision, digest: digest, edits: {}) }.to raise_error(Ao3Backup::Error) { |error| expect(error.code).to eq("stale_revision") }
+    end
+    expect(session.reload.selection_revision).to eq(0)
+  end
+
+  it "creates a new retry generation and prevents the late first fetch from overwriting it" do
+    session
+    expect(provider).to receive(:call) do
+      service.retry_fetch(session)
+      captured
+    end
+    job.call(session.id, 1)
+    expect(session.reload).to have_attributes(state: "queued", generation: 2, snapshot_digest: nil)
+    expect(session.snapshots.count).to eq(0)
+    Ao3Backup::FetchJob.new(provider: instance_double(Ao3Backup::Provider, call: captured), clock: clock).call(session.id, 2)
+    expect(session.reload).to have_attributes(state: "ready", generation: 2)
+  end
+
+  it "does not allow late fetches to overwrite cancellation or expiration" do
+    session
+    expect(provider).to receive(:call) do
+      service.cancel(session)
+      captured
+    end
+    job.call(session.id, 1)
+    expect(session.reload).to have_attributes(state: "cancelled", selection: nil, snapshot_digest: nil)
+    expect(session.snapshots.count).to eq(0)
+  end
+
+  it "expires at the injected boundary and removes temporary snapshot and choices" do
+    job.call(session.id, 1)
+    expiry = Ao3Backup::SessionService.new(clock: -> { session.expires_at })
+    expiry.expire(session)
+    expect(session.reload).to have_attributes(state: "expired", selection: nil, snapshot_digest: nil)
+    expect(session.snapshots.count).to eq(0)
+    expect { expiry.update_selection(session, revision: 0, digest: captured.digest, edits: {}) }.to raise_error(Ao3Backup::Error)
+  end
+
+  it "discards a fetch that crosses its expiration time" do
+    session
+    ticks = [now, session.expires_at, session.expires_at, session.expires_at]
+    crossing_clock = -> { ticks.shift || session.expires_at }
+    Ao3Backup::FetchJob.new(provider: provider, clock: crossing_clock).call(session.id, 1)
+    expect(session.reload).to have_attributes(state: "expired", selection: nil)
+    expect(session.snapshots.count).to eq(0)
+  end
+
+  it "records useful typed errors, restores current user, and bounds explicit fetch retries" do
+    session
+    previous = create(:user)
+    User.current_user = previous
+    allow(provider).to receive(:call).and_raise(Ao3Backup::Error.new(:target_rate_limited, "Wait before retrying.", retry_after: "60"))
+    job.call(session.id, 1)
+    expect(session.reload).to have_attributes(state: "fetch_failed", error_code: "target_rate_limited", retry_after: "60")
+    expect(User.current_user).to eq(previous)
+    expect { service.retry_fetch(session) }.to raise_error(Ao3Backup::Error) { |error| expect(error.code).to eq("retry_later") }
+    later = Ao3Backup::SessionService.new(clock: -> { now + 61.seconds }, dispatcher: dispatcher)
+    later.retry_fetch(session)
+    later.retry_fetch(session)
+    expect { later.retry_fetch(session) }.to raise_error(Ao3Backup::Error) { |error| expect(error.code).to eq("retry_limit") }
+  end
+end
+
+RSpec.describe "Magic Import review requests", type: :request do
+  include MagicImportFixtures
+  let(:owner) { create(:user) }
+
+  before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("AO3_BACKUP_ENABLED").and_return("true")
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AO3_BACKUP_OWNER_IDS", "").and_return(owner.id.to_s)
+    sign_in owner
+    cookies[:user_credentials] = "1"
+  end
+
+  def ready_session
+    session = Ao3Backup::SessionService.new(dispatcher: ->(*) { true }).start(owner: owner, url: captured.identity.canonical_url)
+    Ao3Backup::FetchJob.new(provider: instance_double(Ao3Backup::Provider, call: captured)).call(session.id, 1)
+    session.reload
+  end
+
+  it "renders the native entry and third Post menu link with no content save action" do
+    get "/backup_imports"
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Magic Import work", "Fetch and inspect", "saving to the archive is not enabled")
+    document = Nokogiri::HTML5.parse(response.body)
+    post_menu = document.css("#greeting .dropdown .menu").find { |menu| menu.text.include?("New Work") }
+    expect(post_menu.css("li a").first(3).map(&:text)).to eq(["New Work", "Import Work", "Magic Import work"])
+  end
+
+  it "renders exact choices and persists manual deselections across edit round trips without content writes" do
+    session = ready_session
+    before_counts = [Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)
+    get "/backup_imports/import_sessions/#{session.id}"
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Exact proposed output", "Save to archive (not enabled yet)")
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: session.snapshot_digest, selection: { tags: [], scalars: { summary: { keep: "0" } } }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:found)
+    follow_redirect!
+    expect(response.body).to include("No tags selected.")
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 1, digest: session.snapshot_digest, selection: { scalars: { title: { value: "Locally edited title" } } }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    follow_redirect!
+    expect(response.body).to include("Locally edited title", "No tags selected.")
+    expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(before_counts)
+    expect(session.reload.selection_revision).to eq(2)
+  end
+
+  it "rejects another owner's session at every read/edit/control route" do
+    other = create(:user)
+    session = Ao3Backup::SessionService.new(dispatcher: ->(*) { true }).start(owner: other, url: captured.identity.canonical_url)
+    get "/backup_imports/import_sessions/#{session.id}.json"
+    expect(response).to have_http_status(:not_found)
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(selection: { tags: [] }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:not_found)
+    %w[cancel retry_fetch recover_dispatch].each do |action|
+      post "/backup_imports/import_sessions/#{session.id}/#{action}"
+      expect(response).to have_http_status(:not_found)
+    end
+    expect(session.reload.state).to eq("queued")
+  end
+
+  it "rejects stale and malformed edits while preserving the ready review" do
+    session = ready_session
+    [{ revision: 10, digest: session.snapshot_digest, selection: { tags: [] } },
+     { revision: 0, digest: session.snapshot_digest, selection: { chapters: { "1" => { content: { keep: false } } } } },
+     { revision: 0, digest: session.snapshot_digest, selection: { scalars: { title: { keep: "0" } } } }].each do |edits|
+      patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(edits), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+    expect(session.reload.selection_revision).to eq(0)
+  end
+
+  it "returns rejected edits rather than server errors for malformed nested selections" do
+    session = ready_session
+    ["bad", { scalars: "bad" }, { chapters: "bad" }, { tags: [1] },
+     { tags: [{ id: nil, keep: false }] }, { scalars: { title: [] } },
+     { chapters: { "1" => [] } }].each do |selection|
+      patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: session.snapshot_digest, selection: selection), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+    expect(session.reload.selection_revision).to eq(0)
+  end
+
+  it "rejects an omitted tag keep choice without altering the revision, snapshot or archive" do
+    session = ready_session
+    before_counts = [Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)
+    digest = session.snapshot_digest
+    snapshot = session.current_snapshot.manifest
+    tags = session.selection["tags"].map { |tag| tag.slice("id", "name", "keep") }
+    tags.first.delete("keep")
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: digest, selection: { tags: tags }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.body).to include("Every tag choice must include an explicit keep boolean")
+    expect(session.reload).to have_attributes(selection_revision: 0, snapshot_digest: digest, state: "ready")
+    expect(session.current_snapshot.reload.manifest).to eq(snapshot)
+    expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(before_counts)
+  end
+
+  it "enforces CSRF on mutations when protection is enabled" do
+    session = ready_session
+    previous = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: session.snapshot_digest, selection: { tags: [] }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to redirect_to("/auth_error")
+    expect(session.reload.selection_revision).to eq(0)
+  ensure
+    ActionController::Base.allow_forgery_protection = previous
+  end
+end

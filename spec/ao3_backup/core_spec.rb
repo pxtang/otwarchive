@@ -1,12 +1,5 @@
 require "spec_helper"
 
-module MagicImportFixtures
-  def captured(name = "2_unknown", html: nil)
-    Ao3Backup::CapturedPage.build(identity: Ao3Backup::SourceIdentity.parse("https://archiveofourown.org/works/12345"),
-                                  html: html || File.read(Rails.root.join("spec/fixtures/ao3_backup/#{name}.html")),
-                                  retrieved_at: Time.utc(2026, 10, 28))
-  end
-end
 
 RSpec.describe Ao3Backup::SourceIdentity do
   it "normalizes work and chapter URLs to a single full-work request" do
@@ -205,6 +198,7 @@ end
 
 RSpec.describe Ao3Backup::SelectionPolicy do
   include MagicImportFixtures
+  before { Language.default }
   let(:manifest) { Ao3Backup::Parser.new.call(captured("10_12")) }
   let(:policy) { described_class.new }
 

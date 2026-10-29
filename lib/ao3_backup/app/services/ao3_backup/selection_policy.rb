@@ -36,12 +36,16 @@ module Ao3Backup
         raise Error.new(:invalid_selection, "Tag choices must be a list.") unless edits["tags"].is_a?(Array)
         raise Error.new(:invalid_selection, "Invalid tag choices.") unless edits["tags"].all? { |tag| tag.is_a?(Hash) }
         by_id = result["tags"].index_by { |tag| tag["id"] }
+        unless edits["tags"].all? { |tag| tag["id"].is_a?(String) && by_id.key?(tag["id"]) }
+          raise Error.new(:invalid_selection, "Unknown or malformed tag choice identity.")
+        end
         tag_edits = edits["tags"].empty? ? by_id.keys.map { |id| { "id" => id, "keep" => false } } : edits["tags"]
         raise Error.new(:invalid_selection, "Missing or duplicate tag choices.") unless tag_edits.map { |tag| tag["id"] }.sort == by_id.keys.sort
         result["tags"] = tag_edits.map do |edit|
           unless edit.is_a?(Hash) && (edit.keys - %w[id name keep type]).empty?
             raise Error.new(:invalid_selection, "Unknown tag edit fields.")
           end
+          raise Error.new(:invalid_selection, "Every tag choice must include an explicit keep boolean.") unless edit.key?("keep")
           old = by_id.fetch(edit["id"])
           raise Error.new(:invalid_selection, "Tag type cannot be changed.") if edit.key?("type") && edit["type"] != old["type"]
           name = edit.fetch("name", old["name"])

@@ -1,0 +1,9 @@
+<%# Engine-only native menu: Media.for_menu lazily creates an Uncategorized tag. %>
+<ul class="menu">
+  <li><%= link_to t("menu.menu_fandoms.all"), media_index_path %></li>
+  <% media = Media.canonical.by_name.where.not(name: [ArchiveConfig.MEDIA_UNCATEGORIZED_NAME, ArchiveConfig.MEDIA_NO_TAG_NAME]).to_a %>
+  <% media += Media.where(name: ArchiveConfig.MEDIA_UNCATEGORIZED_NAME).to_a %>
+  <% media.each do |medium| %>
+    <li id="medium_<%= medium.id %>"><%= link_to medium.name, media_fandoms_path(medium) %></li>
+  <% end %>
+</ul>

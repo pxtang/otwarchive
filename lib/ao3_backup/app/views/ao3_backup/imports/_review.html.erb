@@ -1,0 +1,102 @@
+<%= form_tag import_session_path(@import_session), method: :patch, class: "post", id: "magic-selection-form" do %>
+  <%= hidden_field_tag :revision, @import_session.selection_revision %>
+  <%= hidden_field_tag :digest, @import_session.snapshot_digest %>
+  <fieldset>
+    <legend>Work metadata</legend>
+    <p class="muted">Edit the proposed local values or uncheck a field to remove it. Removing a source title or language requires the explicit local replacement shown below.</p>
+    <% @selection["scalars"].each do |name, field| %>
+      <div class="field">
+        <%= label_tag "scalar_#{name}", name.humanize %>
+        <span class="keep"><%= hidden_field_tag "selection[scalars][#{name}][keep]", "0", id: nil %><%= check_box_tag "selection[scalars][#{name}][keep]", "1", field["keep"], id: "keep_#{name}" %> <%= label_tag "keep_#{name}", "Keep #{name.humanize.downcase}" %></span>
+        <% if %w[summary notes endnotes].include?(name) %>
+          <%= text_area_tag "selection[scalars][#{name}][value]", field["value"], id: "scalar_#{name}", rows: 4 %>
+        <% elsif name == "language" %>
+          <%= select_tag "selection[scalars][#{name}][value]", options_for_select((@languages + [field["value"]]).compact.uniq, field["value"]), id: "scalar_#{name}" %>
+        <% else %>
+          <%= text_field_tag "selection[scalars][#{name}][value]", field["value"], id: "scalar_#{name}" %>
+        <% end %>
+        <% if %w[title language].include?(name) %>
+          <p><%= label_tag "replacement_#{name}", "Local #{name} if source removed (required when unchecked)" %>
+          <% if name == "language" %><%= select_tag "selection[scalars][#{name}][replacement]", options_for_select(@languages, field["replacement"]), include_blank: "Choose a local language", id: "replacement_#{name}" %>
+          <% else %><%= text_field_tag "selection[scalars][#{name}][replacement]", field["replacement"], id: "replacement_#{name}" %><% end %></p>
+        <% end %>
+        <details><summary>Fetched source value</summary><pre><%= @snapshot.manifest.dig("scalars", name).presence || "Absent" %></pre></details>
+        <% if name == "expected_chapters" %><p class="muted">Leave blank for an unknown final total. This does not change the published chapter bodies.</p><% end %>
+        <% if name == "series" %><p class="muted">Series attribution is review metadata. No local series will be created in this milestone.</p><% end %>
+      </div>
+    <% end %>
+  </fieldset>
+  <fieldset>
+    <legend>Tags and author attribution</legend>
+    <p class="muted">Author tags come first. Existing local tags start selected; new tags start unchecked. Ratings and warnings start unchecked even if they exist locally. Renaming preserves your keep choice.</p>
+    <div class="toolbar">
+      <%= label_tag :magic_tag_search, "Find tags" %><%= search_field_tag nil, nil, id: "magic_tag_search", placeholder: "Search names" %>
+      <%= label_tag :magic_tag_type, "Type" %><%= select_tag nil, options_for_select([['All types', '']] + Ao3Backup::LocalTagResolver::TYPES.map { |type| [type, type] }), id: "magic_tag_type" %>
+      <button type="button" id="magic-select-visible">Select visible</button><button type="button" id="magic-clear-visible">Clear visible</button>
+    </div>
+    <% fetched_tags = @snapshot.manifest["authors"].map { |name| { "name" => name, "type" => "Freeform" } } + @snapshot.manifest["tags"] %>
+    <ul class="tag-candidates">
+      <% @selection["tags"].each do |tag| %>
+        <li class="tag-candidate <%= 'author' if tag['author'] %>" data-type="<%= tag['type'] %>">
+          <span><%= hidden_field_tag "selection[tags][#{tag['id']}][id]", tag["id"], id: nil %><%= hidden_field_tag "selection[tags][#{tag['id']}][keep]", "0", id: nil %><%= check_box_tag "selection[tags][#{tag['id']}][keep]", "1", tag["keep"], id: "tag_keep_#{tag['id']}", aria: { label: "Keep #{tag['type']} #{tag['name']}" } %></span>
+          <span><%= label_tag "tag_name_#{tag['id']}", "#{tag['author'] ? 'Author · ' : ''}#{tag['type']}" %><%= text_field_tag "selection[tags][#{tag['id']}][name]", tag["name"], id: "tag_name_#{tag['id']}" %><br><span class="muted">Fetched: <%= fetched_tags.fetch(tag["id"].to_i)["name"] %></span></span>
+          <span class="tag-status"><span class="badge"><%= tag["status"] == "new" ? "New tag" : tag["status"].humanize %></span><% if tag["author"] %><span class="badge">Author first</span><% end %><br><span class="muted"><% if tag["local_id"] %>Local <%= tag["local_type"] %> #<%= tag["local_id"] %>: <%= tag["local_name"] %><% elsif tag["local_type"] %>Name belongs to <%= tag["local_type"] %>. Edit or remove this choice.<% else %>Will create a tag if selected in a future save.<% end %></span></span>
+        </li>
+      <% end %>
+    </ul>
+  </fieldset>
+  <fieldset>
+    <legend>Published chapter structure</legend>
+    <p class="muted">All published bodies stay in source order. Chapter identifiers are technical source identities. Titles, summaries, and notes remain independent choices.</p>
+    <% @selection["chapters"].each do |chapter| %>
+      <div class="chapter">
+        <h4>Chapter <%= chapter["position"] %><%= ": #{chapter['title']}" if chapter['title'].present? %></h4>
+        <p class="muted">Source chapter ID: <%= chapter["source_chapter_id"] || "Not exposed by source" %></p>
+        <% chapter["fields"].each do |name, field| %>
+          <div class="field">
+            <% key = "chapter_#{chapter['position']}_#{name}" %>
+            <%= label_tag key, "Chapter #{chapter['position']} #{name.humanize.downcase}" %>
+            <span class="keep"><%= hidden_field_tag "selection[chapters][#{chapter['position']}][#{name}][keep]", "0", id: nil %><%= check_box_tag "selection[chapters][#{chapter['position']}][#{name}][keep]", "1", field["keep"], id: "keep_#{key}" %> <%= label_tag "keep_#{key}", "Keep #{name}" %></span>
+            <%= text_area_tag "selection[chapters][#{chapter['position']}][#{name}][value]", field["value"], id: key, rows: name == "title" ? 1 : 3 %>
+            <details><summary>Fetched source value</summary><pre><%= @snapshot.manifest["chapters"].find { |source| source["position"] == chapter["position"] }[name].presence || "Absent" %></pre></details>
+          </div>
+        <% end %>
+        <details><summary>Inspect chapter <%= chapter["position"] %> body</summary><div class="userstuff"><%= chapter["content"].html_safe %></div></details>
+      </div>
+    <% end %>
+  </fieldset>
+  <p class="submit actions"><%= submit_tag "Update review" %></p>
+<% end %>
+<section class="preview" id="magic-proposed-output">
+  <h3 class="heading">Exact proposed output</h3>
+  <p class="muted">This preview reflects the saved review revision. Apply changes with “Update review” to refresh it.</p>
+  <h4><%= @proposed.dig("scalars", "title") %></h4>
+  <dl class="meta group">
+    <% @proposed["scalars"].except("title", "summary", "notes", "endnotes").each do |name, value| %><dt><%= name.humanize %></dt><dd><%= value.presence || "Omitted" %></dd><% end %>
+  </dl>
+  <h4>Selected tags in display order</h4>
+  <ol><% @proposed["tags"].each do |tag| %><li><%= tag["name"] %> <span class="badge"><%= tag["type"] %></span> <%= "(new)" unless tag["local_id"] %></li><% end %></ol>
+  <% if @proposed["tags"].empty? %><p>No tags selected.</p><% end %>
+  <% %w[summary notes endnotes].each do |name| %><h4><%= name.humanize %></h4><div class="userstuff"><%= @proposed["scalars"][name].present? ? @proposed["scalars"][name].html_safe : "Omitted" %></div><% end %>
+  <h4>Chapters</h4>
+  <% @proposed["chapters"].each do |chapter| %>
+    <details><summary>Chapter <%= chapter["position"] %><%= ": #{chapter['title']}" if chapter['title'].present? %></summary>
+      <% %w[summary notes content endnotes].each do |name| %><h5><%= name.humanize %></h5><div class="userstuff"><%= chapter[name].present? ? chapter[name].html_safe : "Omitted" %></div><% end %>
+    </details>
+  <% end %>
+  <% if @snapshot.manifest["remote_dependencies"].any? %><h4>Remote media dependencies</h4><p class="muted">These media remain externally hosted; no media is copied.</p><ul><% @snapshot.manifest["remote_dependencies"].each do |url| %><li><%= url %></li><% end %></ul><% end %>
+  <p><button disabled type="button">Save to archive (not enabled yet)</button></p>
+</section>
+<script>
+(function () {
+  var rows = Array.from(document.querySelectorAll('.magic-import .tag-candidate'));
+  var search = document.getElementById('magic_tag_search'), type = document.getElementById('magic_tag_type');
+  function filter() {
+    var query = search.value.toLocaleLowerCase();
+    rows.forEach(function (row) { row.hidden = (type.value && row.dataset.type !== type.value) || row.querySelector('input[type=text]').value.toLocaleLowerCase().indexOf(query) < 0; });
+  }
+  search.addEventListener('input', filter); type.addEventListener('change', filter);
+  document.getElementById('magic-select-visible').addEventListener('click', function () { rows.filter(function (row) { return !row.hidden; }).forEach(function (row) { row.querySelector('input[type=checkbox]').checked = true; }); });
+  document.getElementById('magic-clear-visible').addEventListener('click', function () { rows.filter(function (row) { return !row.hidden; }).forEach(function (row) { row.querySelector('input[type=checkbox]').checked = false; }); });
+})();
+</script>
