@@ -1,0 +1,7 @@
+<div class="magic-rich-editor" data-editor-id="<%= field_id %>">
+  <div class="editor-modes actions" role="group" aria-label="<%= field_id.humanize %> editor mode">
+    <button type="button" data-editor-mode="rich" aria-pressed="true">Rich Text</button>
+    <button type="button" data-editor-mode="html" aria-pressed="false">HTML</button>
+  </div>
+  <%= text_area_tag name, value, id: field_id, rows: 4, class: "mce-editor" %>
+</div>

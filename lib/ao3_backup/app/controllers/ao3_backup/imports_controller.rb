@@ -12,10 +12,16 @@ module Ao3Backup
     # replaces the engine's _routes and sends optimized engine forms to unrelated
     # host routes (for example /cable).
     helper(Module.new do
+      def allow_tinymce?(controller)
+        controller.controller_path == "ao3_backup/imports" && %w[show update].include?(controller.action_name)
+      end
+
       ::Rails.application.routes.named_routes.helper_names.each do |name|
         define_method(name) { |*args, **options| main_app.public_send(name, *args, **options) }
       end
     end)
+    prepend_before_action :capture_rich_values, only: :update
+    before_action :restore_rich_values, only: :update
     before_action :authenticate_user!
     before_action :authorize_importer!
     before_action :load_session, except: [:index, :create]
@@ -78,6 +84,38 @@ module Ao3Backup
     end
 
     private
+
+    # The host sanitizer treats nested keys named "value" as plain text. Preserve
+    # only these fields until SelectionPolicy sanitizes them by their field name.
+    def capture_rich_values
+      @rich_values = []
+      selection = params[:selection]
+      return unless selection.is_a?(ActionController::Parameters)
+      collect_rich_values(selection[:scalars], ["scalars"])
+      chapters = selection[:chapters]
+      if chapters.is_a?(ActionController::Parameters)
+        chapters.each { |position, fields| collect_rich_values(fields, ["chapters", position]) }
+      end
+    end
+
+    def collect_rich_values(fields, prefix)
+      return unless fields.is_a?(ActionController::Parameters)
+      %w[summary notes endnotes].each do |name|
+        field = fields[name]
+        next unless field.is_a?(ActionController::Parameters)
+        %w[value replacement].each do |key|
+          @rich_values << [prefix + [name, key], field[key]] if field[key].is_a?(String)
+        end
+      end
+    end
+
+    def restore_rich_values
+      @rich_values.each do |path, value|
+        target = params[:selection]
+        path[0...-1].each { |key| target = target[key] if target.is_a?(ActionController::Parameters) }
+        target[path.last] = value if target.is_a?(ActionController::Parameters)
+      end
+    end
 
     def authorize_importer!
       head :forbidden unless Access.allowed?(current_user)

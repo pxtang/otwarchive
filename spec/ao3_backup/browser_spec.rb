@@ -40,7 +40,10 @@ RSpec.describe "Magic Import browser review", type: :feature do
     Skin.load_site_css
     Skin.set_default_to_current_version
     AdminSetting.default.update_attribute(:default_skin_id, Skin.default.id)
-    source = captured("10_12")
+    load Rails.root.join("script/ensure_required_tags.rb")
+    source_html = captured("10_12").html.sub("Invented prose chapter 1.", "Invented paragraph. " * 1500)
+    source_html = source_html.sub("Work ending note.", '<b lang="fr">bonjour</b><abbr title="meaning" align="right">ABC</abbr>')
+    source = captured(html: source_html)
     Fandom.create!(name: "呪術廻戦 | Jujutsu Kaisen (Anime)")
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with("AO3_BACKUP_ENABLED").and_return("true")
@@ -62,6 +65,14 @@ RSpec.describe "Magic Import browser review", type: :feature do
     visit "/backup_imports"
     expect(page).to have_css("h2", text: "Magic Import work")
     expect(page.evaluate_script("getComputedStyle(document.body).fontFamily")).to include("Lucida")
+    new_work_url = find('#greeting a', text: 'New Work', visible: :all)[:href]
+    expect(URI(new_work_url).path).to eq("/works/new")
+    visit new_work_url
+    expect(page).to have_field("work_title")
+    expect(page).to have_select("work_rating_string", with_options: [ArchiveConfig.RATING_DEFAULT_TAG_NAME, ArchiveConfig.RATING_TEEN_TAG_NAME, ArchiveConfig.RATING_EXPLICIT_TAG_NAME])
+    visit "/works/search"
+    expect(page).to have_field("work_search_query")
+    visit "/backup_imports"
     before_counts = [Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)
     fill_in "AO3 work or chapter URL", with: source.identity.canonical_url
     click_button "Fetch and inspect"
@@ -79,6 +90,43 @@ RSpec.describe "Magic Import browser review", type: :feature do
     expect(page).to have_content("Exact proposed output")
     expect(page).to have_content("Source word count: 1,234")
     expect(page).to have_button("Save to archive (not enabled yet)", disabled: true)
+    expect(page).to have_css('script[src="/javascripts/tinymce/tinymce.min.js"]', visible: :all)
+    expect(page).to have_css('script[src="/javascripts/mce_editor.min.js"]', visible: :all)
+    summary_editor = find('[data-editor-id="scalar_summary"]')
+    page.execute_script("arguments[0].scrollIntoView({block: 'center'})", summary_editor)
+    expect(page).to have_css("#scalar_summary_ifr")
+    within_frame("scalar_summary_ifr") { expect(page).to have_content("Invented summary.") }
+    summary_editor.find('[data-editor-mode="html"]').click
+    expect(page).not_to have_css("#scalar_summary_ifr")
+    fill_in "scalar_summary", with: "<p><strong>Edited rich summary</strong></p>"
+    summary_editor.find('[data-editor-mode="rich"]').click
+    expect(page).to have_css("#scalar_summary_ifr")
+    within_frame("scalar_summary_ifr") { expect(page).to have_css("strong", text: "Edited rich summary") }
+    page.save_screenshot(Rails.root.join("tmp/magic-import-rich-editor.png"))
+    notes_editor = find('[data-editor-id="scalar_notes"]')
+    page.execute_script("arguments[0].scrollIntoView({block: 'center'})", notes_editor)
+    expect(page).to have_css("#scalar_notes_ifr")
+    page.execute_script("tinyMCE.get('scalar_notes').setContent('<p><em>Edited rich notes</em></p>')")
+    untouched_editor = find('[data-editor-id="scalar_endnotes"]')
+    page.execute_script("arguments[0].scrollIntoView({block: 'center'})", untouched_editor)
+    expect(page).to have_css("#scalar_endnotes_ifr")
+    untouched_editor.find('[data-editor-mode="html"]').click
+    expect(find_field("scalar_endnotes").value).to include('<b lang="fr">', '<abbr title="meaning" align="right">')
+    untouched_editor.find('[data-editor-mode="rich"]').click
+    expect(page).to have_css("#scalar_endnotes_ifr")
+    chapter_notes = find('[data-editor-id="chapter_2_endnotes"]')
+    page.execute_script("arguments[0].scrollIntoView({block: 'center'})", chapter_notes)
+    expect(page).to have_css("#chapter_2_endnotes_ifr")
+    page.execute_script("tinyMCE.get('chapter_2_endnotes').setContent('<p>Edited chapter endnotes</p>')")
+    inspection = find("#inspect-chapter-1")
+    inspection.find("summary").click
+    scroller = inspection.find(".magic-chapter-scroll")
+    expect(page.evaluate_script("arguments[0].scrollHeight > arguments[0].clientHeight", scroller)).to eq(true)
+    page.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scroller)
+    expect(inspection.find("summary")).to be_visible
+    inspection.click_button "Collapse chapter 1 body"
+    expect(page.evaluate_script("arguments[0].open", inspection)).to eq(false)
+    expect(page.evaluate_script("document.activeElement === document.querySelector('#inspect-chapter-1 > summary')")).to eq(true)
     selection = session.reload.selection
     author_id = selection["tags"].find { |tag| tag["author"] }["id"]
     rating_id = selection["tags"].find { |tag| tag["type"] == "Rating" }["id"]
@@ -100,8 +148,14 @@ RSpec.describe "Magic Import browser review", type: :feature do
       expect(page).to have_content("A locally reviewed title")
       expect(page).to have_content("Local_Author")
       expect(page).not_to have_content("Jujutsu Kaisen")
+      expect(page).to have_content("Edited rich notes")
     end
     expect(session.reload.selection_revision).to eq(1)
+    expect(session.selection.dig("scalars", "notes", "value")).to include("Edited rich notes")
+    expect(session.selection.dig("scalars", "endnotes", "value")).to include('<b lang="fr">', '<abbr title="meaning" align="right">')
+    expect(session.selection.dig("scalars", "summary", "value")).to include("<strong>Edited rich summary</strong>")
+    expect(session.selection.dig("scalars", "summary", "keep")).to eq(false)
+    expect(session.selection.dig("chapters", 1, "fields", "endnotes", "value")).to include("Edited chapter endnotes")
     expect(session.selection["tags"].select { |tag| tag["type"] == "Fandom" }.map { |tag| tag["keep"] }).to eq([false, false])
     expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(before_counts)
     expect(a_request(:post, "http://solver.test:8191/v1")).to have_been_made.once

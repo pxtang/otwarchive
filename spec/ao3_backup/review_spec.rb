@@ -188,6 +188,20 @@ RSpec.describe "Magic Import review requests", type: :request do
     expect(session.reload.selection_revision).to eq(2)
   end
 
+  it "preserves allowed rich formatting and strips unsafe markup in review edits" do
+    session = ready_session
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(
+      revision: 0, digest: session.snapshot_digest,
+      selection: { scalars: { summary: { value: '<p><strong>Bold</strong><script>alert(1)</script></p>' } },
+                   chapters: { "1" => { notes: { value: '<p><em>Chapter note</em></p>' } } } }
+    ), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:found)
+    selection = session.reload.selection
+    expect(selection.dig("scalars", "summary", "value")).to include("<strong>Bold</strong>")
+    expect(selection.dig("scalars", "summary", "value")).not_to include("<script>", "alert(1)")
+    expect(selection.dig("chapters", 0, "fields", "notes", "value")).to include("<em>Chapter note</em>")
+  end
+
   it "rejects another owner's session at every read/edit/control route" do
     other = create(:user)
     session = Ao3Backup::SessionService.new(dispatcher: ->(*) { true }).start(owner: other, url: captured.identity.canonical_url)
@@ -248,5 +262,26 @@ RSpec.describe "Magic Import review requests", type: :request do
     expect(session.reload.selection_revision).to eq(0)
   ensure
     ActionController::Base.allow_forgery_protection = previous
+  end
+end
+
+RSpec.describe "Archive forms beside Magic Import", type: :request do
+  before do
+    load Rails.root.join("script/ensure_required_tags.rb")
+    Language.default
+    sign_in create(:user)
+    cookies[:user_credentials] = "1"
+  end
+
+  it "loads ordinary New Work and search with the required reference catalog and no draft creation" do
+    counts = [Work.count, Chapter.count, Ao3Backup::Import.count]
+    get "/works/new"
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML5.parse(response.body)
+    expect(document.css("#work_rating_string option").map(&:text)).to include(ArchiveConfig.RATING_DEFAULT_TAG_NAME, ArchiveConfig.RATING_TEEN_TAG_NAME, ArchiveConfig.RATING_EXPLICIT_TAG_NAME)
+    expect(response.body).to include("/javascripts/tinymce/tinymce.min.js", "/javascripts/mce_editor.min.js")
+    get "/works/search"
+    expect(response).to have_http_status(:ok)
+    expect([Work.count, Chapter.count, Ao3Backup::Import.count]).to eq(counts)
   end
 end

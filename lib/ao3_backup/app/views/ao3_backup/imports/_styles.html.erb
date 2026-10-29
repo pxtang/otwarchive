@@ -19,5 +19,9 @@
   .magic-import .preview { border: 1px solid #ccc; background: #fafafa; padding: 1.2em; margin: 1em 0; }
   .magic-import .preview h3 { margin-top: .5em; }
   .magic-import .chapter { border-top: 1px solid #ccc; padding-top: .8em; }
+  .magic-import .editor-modes { display: flex; gap: .4em; margin: .3em 0; }
+  .magic-import .editor-modes [aria-pressed=true] { font-weight: bold; border-bottom: 3px solid #900; }
+  .magic-import .magic-chapter-scroll { max-height: 32rem; overflow: auto; padding: .5em; overscroll-behavior: contain; }
+  .magic-import .magic-chapter-inspection > summary { position: sticky; top: 0; z-index: 1; background: #fff; padding: .4em; cursor: pointer; }
   @media (max-width: 45em) { .magic-import .tag-candidate { grid-template-columns: 2em 1fr; } .magic-import .tag-status { grid-column: 2; } }
 </style>
