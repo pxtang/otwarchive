@@ -27,7 +27,8 @@ module Ao3Backup
     before_action :load_session, except: [:index, :create]
 
     def index
-      @sessions = ImportSession.where(owner: current_user).order(created_at: :desc).limit(10)
+      @sessions = ImportSession.where(owner: current_user).order(created_at: :desc).limit(10).to_a
+      @sessions.each { |session| session_service.expire(session) }
     end
 
     def create
@@ -69,6 +70,14 @@ module Ao3Backup
       prepare_review
       restore_submitted_review(edits) if @selection && edits.is_a?(Hash) && params[:revision].to_s == @import_session.selection_revision.to_s && params[:digest] == @import_session.snapshot_digest
       render :show, status: :unprocessable_entity
+    end
+
+    def confirm_delete
+    end
+
+    def destroy
+      @import_session.with_lock { @import_session.destroy! }
+      redirect_to main_app.ao3_backup_path, notice: "Review deleted."
     end
 
     def cancel

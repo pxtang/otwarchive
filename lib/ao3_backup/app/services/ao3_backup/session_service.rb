@@ -1,6 +1,6 @@
 module Ao3Backup
   class SessionService
-    TTL = 24.hours
+    TTL = 1.week
     MAX_GENERATIONS = 3
 
     def initialize(clock: -> { Time.current }, dispatcher: ->(id, generation) { Resque.enqueue(FetchJob, id, generation) }, policy: SelectionPolicy.new)

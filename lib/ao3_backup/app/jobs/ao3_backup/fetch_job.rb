@@ -39,13 +39,17 @@ module Ao3Backup
       end
     rescue StandardError => error
       if session
-        SessionService.new(clock: @clock).expire(session)
-        session.with_lock do
-          if session.generation == generation && session.state == "fetching"
-            typed = error.is_a?(Error) ? error : Error.new(:fetch_failed, "The work could not be inspected. Retry the fetch or contact the maintainer.")
-            session.update!(state: "fetch_failed", error_code: typed.code, error_message: typed.message,
-                            retry_after: typed.retry_after, retry_not_before: retry_time(typed.retry_after))
+        begin
+          SessionService.new(clock: @clock).expire(session)
+          session.with_lock do
+            if session.generation == generation && session.state == "fetching"
+              typed = error.is_a?(Error) ? error : Error.new(:fetch_failed, "The work could not be inspected. Retry the fetch or contact the maintainer.")
+              session.update!(state: "fetch_failed", error_code: typed.code, error_message: typed.message,
+                              retry_after: typed.retry_after, retry_not_before: retry_time(typed.retry_after))
+            end
           end
+        rescue ActiveRecord::RecordNotFound
+          # Deletion may also race with recording a fetch error.
         end
       end
     ensure

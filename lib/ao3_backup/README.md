@@ -195,7 +195,7 @@ The exact proposed output uses only retained local values and shows externally
 hosted media, source completion and source word count as source context. The Save
 button is disabled, with a prominent review-only notice.
 
-Reviews expire 24 hours after creation. Access/worker expiry and cancellation
+Reviews expire one week after creation. The expiry migration extends still-active reviews to one week from creation; it does not revive expired or cancelled reviews. The Recent reviews list shows the saved title and source authors for ready, unexpired reviews, and offers a confirmation dialog to delete each review and its temporary data, with a confirmation page when JavaScript is unavailable. Access/worker expiry and cancellation
 remove snapshots and editable choices. M4's scheduled sweeping and worker-death
 lease recovery are deferred; an abandoned fetching generation can already be
 explicitly retried/cancelled. M3 will add content saving/publication. No M3 work

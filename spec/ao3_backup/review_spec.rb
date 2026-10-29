@@ -109,6 +109,64 @@ RSpec.describe "Magic Import review lifecycle" do
     expect(session.snapshots.count).to eq(0)
   end
 
+  it "extends only still-active legacy sessions during migration" do
+    require Rails.root.join("lib/ao3_backup/db/migrate/20261029000300_extend_active_ao3_backup_review_expiry")
+    current = Time.current
+    active = service.start(owner: owner, url: captured.identity.canonical_url)
+    expired = service.start(owner: owner, url: captured.identity.canonical_url)
+    cancelled = service.start(owner: owner, url: captured.identity.canonical_url)
+    [active, expired, cancelled].each { |item| item.update_columns(created_at: current - 12.hours, expires_at: current + 12.hours) }
+    expired.update_columns(expires_at: current - 1.second)
+    cancelled.update_columns(state: "cancelled")
+    old_expired = expired.expires_at
+    old_cancelled = cancelled.expires_at
+    ExtendActiveAo3BackupReviewExpiry.new.up
+    expect(active.reload.expires_at).to be_within(1.second).of(active.created_at + 1.week)
+    expect(expired.reload.expires_at).to eq(old_expired)
+    expect(cancelled.reload.expires_at).to eq(old_cancelled)
+  end
+
+  it "sets a one-week expiry for new sessions using the injected clock" do
+    expect(session.expires_at).to eq(now + 1.week)
+    job.call(session.id, 1)
+    Ao3Backup::SessionService.new(clock: -> { now + 1.week - 1.second }).expire(session)
+    expect(session.reload.state).to eq("ready")
+    Ao3Backup::SessionService.new(clock: -> { now + 1.week }).expire(session)
+    expect(session.reload.state).to eq("expired")
+    expect(session.snapshots.count).to eq(0)
+  end
+
+  it "ignores deleted queued and in-flight jobs, including failed fetches" do
+    id = session.id
+    before_counts = counts
+    expect(provider).to receive(:call) { session.destroy!; captured }
+    expect { job.call(id, 1) }.not_to raise_error
+    expect { job.call(id, 1) }.not_to raise_error
+    expect(Ao3Backup::ImportSession.find_by(id: id)).to be_nil
+    expect(Ao3Backup::Snapshot.where(import_session_id: id)).to be_empty
+    expect(counts).to eq(before_counts)
+    second = service.start(owner: owner, url: captured.identity.canonical_url)
+    failing = instance_double(Ao3Backup::Provider)
+    expect(failing).to receive(:call) { second.destroy!; raise "fetch failed" }
+    expect { Ao3Backup::FetchJob.new(provider: failing, clock: clock).call(second.id, 1) }.not_to raise_error
+  end
+
+  it "records missing records from the provider or parser as fetch failures" do
+    ["provider", "parser"].each do |stage|
+      current = service.start(owner: owner, url: captured.identity.canonical_url)
+      failing_provider = instance_double(Ao3Backup::Provider)
+      failing_parser = instance_double(Ao3Backup::Parser)
+      if stage == "provider"
+        allow(failing_provider).to receive(:call).and_raise(ActiveRecord::RecordNotFound)
+      else
+        allow(failing_provider).to receive(:call).and_return(captured)
+        allow(failing_parser).to receive(:call).and_raise(ActiveRecord::RecordNotFound)
+      end
+      expect { Ao3Backup::FetchJob.new(provider: failing_provider, parser: failing_parser, clock: clock).call(current.id, 1) }.not_to raise_error
+      expect(current.reload).to have_attributes(state: "fetch_failed", error_code: "fetch_failed")
+    end
+  end
+
   it "expires at the injected boundary and removes temporary snapshot and choices" do
     job.call(session.id, 1)
     expiry = Ao3Backup::SessionService.new(clock: -> { session.expires_at })
@@ -313,6 +371,48 @@ RSpec.describe "Magic Import review requests", type: :request do
     expect(session.reload).to have_attributes(selection_revision: 0, snapshot_digest: digest, state: "ready")
     expect(session.current_snapshot.reload.manifest).to eq(snapshot)
     expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(before_counts)
+  end
+
+  it "shows ready titles and authors, and clears expired details before listing" do
+    session = ready_session
+    get "/backup_imports"
+    expect(response.body).to include("Source author", "Invented_Author", session.selection.dig("scalars", "title", "value"))
+    session.update!(expires_at: 1.second.ago)
+    get "/backup_imports"
+    expect(response.body).not_to include("Invented_Author")
+    expect(response.body).to include("Expired", "AO3 work #{session.source_work_id}")
+    expect(session.reload.selection).to be_nil
+    expect(session.snapshots.count).to eq(0)
+  end
+
+  it "deletes only the owner's review and its temporary data" do
+    session = ready_session
+    other = create(:user)
+    foreign = Ao3Backup::SessionService.new(dispatcher: ->(*) { true }).start(owner: other, url: captured.identity.canonical_url)
+    counts = [Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)
+    get "/backup_imports/import_sessions/#{foreign.id}/confirm_delete"
+    expect(response).to have_http_status(:not_found)
+    delete "/backup_imports/import_sessions/#{foreign.id}"
+    expect(response).to have_http_status(:not_found)
+    get "/backup_imports/import_sessions/#{session.id}/confirm_delete"
+    expect(response.body).to include("Delete review?", "Keep review")
+    delete "/backup_imports/import_sessions/#{session.id}"
+    expect(response).to have_http_status(:found)
+    expect(Ao3Backup::ImportSession.find_by(id: session.id)).to be_nil
+    expect(Ao3Backup::Snapshot.where(import_session_id: session.id)).to be_empty
+    expect(Ao3Backup::ImportSession.exists?(foreign.id)).to be true
+    expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(counts)
+  end
+
+  it "enforces CSRF on deletion" do
+    session = ready_session
+    previous = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+    delete "/backup_imports/import_sessions/#{session.id}"
+    expect(response).to redirect_to("/auth_error")
+    expect(Ao3Backup::ImportSession.exists?(session.id)).to be true
+  ensure
+    ActionController::Base.allow_forgery_protection = previous
   end
 
   it "enforces CSRF on mutations when protection is enabled" do

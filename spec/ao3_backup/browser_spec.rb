@@ -182,6 +182,16 @@ RSpec.describe "Magic Import browser review", type: :feature do
     page.current_window.resize_to(390, 844)
     page.execute_script("document.getElementById('magic-import-review').scrollIntoView()")
     page.save_screenshot(Rails.root.join("tmp/magic-import-review-mobile.png"))
+    visit "/backup_imports"
+    expect(page).to have_content("A locally reviewed title")
+    expect(page).to have_content("Invented_Author")
+    dismiss_confirm("Delete this review and its temporary snapshot and choices?") { click_link "Delete" }
+    expect(Ao3Backup::ImportSession.exists?(session.id)).to be true
+    accept_confirm("Delete this review and its temporary snapshot and choices?") { click_link "Delete" }
+    expect(page).to have_content("Review deleted")
+    expect(Ao3Backup::ImportSession.exists?(session.id)).to be false
+    expect(Ao3Backup::Snapshot.where(import_session_id: session.id)).to be_empty
+    expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(before_counts)
   ensure
     release << true if release && worker&.alive?
     worker&.join(5)

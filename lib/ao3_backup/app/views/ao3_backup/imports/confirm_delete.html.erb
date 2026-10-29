@@ -1,0 +1,7 @@
+<%= render "styles" %>
+<div class="magic-import">
+  <h2 class="heading">Delete review?</h2>
+  <p>Delete the review for AO3 work <%= @import_session.source_work_id %>? Its temporary snapshot and choices will be permanently removed.</p>
+  <%= button_to "Delete review", import_session_path(@import_session), method: :delete %>
+  <p><%= link_to "Keep review", main_app.ao3_backup_path %></p>
+</div>
