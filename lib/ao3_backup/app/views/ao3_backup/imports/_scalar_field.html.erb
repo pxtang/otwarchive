@@ -1,0 +1,19 @@
+<% labels = { "title" => "Work Title", "notes" => "Beginning Notes", "endnotes" => "End Notes", "series" => "Source series", "expected_chapters" => "Expected number of chapters", "published_at" => "Publication date", "status_date" => "Source status date", "status_label" => "Source status label", "source_attribution" => "Source URL" } %>
+<dt class="<%= name %>"><%= label_tag "scalar_#{name}", labels.fetch(name, name.humanize) %></dt>
+<dd class="<%= name %> field">
+  <span class="keep"><%= hidden_field_tag "selection[scalars][#{name}][keep]", "0", id: nil %><%= check_box_tag "selection[scalars][#{name}][keep]", "1", field["keep"], id: "keep_#{name}" %> <%= label_tag "keep_#{name}", "Keep #{name.humanize.downcase}" %></span>
+  <% if %w[summary notes endnotes].include?(name) %>
+    <%= render "rich_text_field", name: "selection[scalars][#{name}][value]", value: field["value"], field_id: "scalar_#{name}" %>
+  <% elsif name == "language" %>
+    <%= select_tag "selection[scalars][#{name}][value]", options_for_select((@languages + [field["value"]]).compact.uniq, field["value"]), id: "scalar_#{name}" %>
+  <% else %>
+    <%= text_field_tag "selection[scalars][#{name}][value]", field["value"], id: "scalar_#{name}" %>
+  <% end %>
+  <% if %w[title language].include?(name) %>
+    <p><%= label_tag "replacement_#{name}", "Local #{name} if source removed (required when unchecked)" %>
+    <% if name == "language" %><%= select_tag "selection[scalars][#{name}][replacement]", options_for_select(@languages, field["replacement"]), include_blank: "Choose a local language", id: "replacement_#{name}" %>
+    <% else %><%= text_field_tag "selection[scalars][#{name}][replacement]", field["replacement"], id: "replacement_#{name}" %><% end %></p>
+  <% end %>
+  <details><summary>Fetched source value</summary><pre><%= @snapshot.manifest.dig("scalars", name).presence || "Absent" %></pre></details>
+  <% if name == "expected_chapters" %><p class="muted">Leave blank for an unknown final total. All published chapter bodies remain in source order.</p><% end %>
+</dd>

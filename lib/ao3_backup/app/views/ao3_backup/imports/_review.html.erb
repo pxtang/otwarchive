@@ -1,34 +1,10 @@
 <% use_tinymce %>
-<%= form_tag import_session_path(@import_session), method: :patch, class: "post", id: "magic-selection-form" do %>
+<%= form_tag import_session_path(@import_session), method: :patch, class: "verbose post work", id: "magic-selection-form" do %>
   <%= hidden_field_tag :revision, @import_session.selection_revision %>
   <%= hidden_field_tag :digest, @import_session.snapshot_digest %>
-  <fieldset>
-    <legend>Work metadata</legend>
-    <p class="muted">Edit the proposed local values or uncheck a field to remove it. Removing a source title or language requires the explicit local replacement shown below.</p>
-    <% @selection["scalars"].each do |name, field| %>
-      <div class="field">
-        <%= label_tag "scalar_#{name}", name.humanize %>
-        <span class="keep"><%= hidden_field_tag "selection[scalars][#{name}][keep]", "0", id: nil %><%= check_box_tag "selection[scalars][#{name}][keep]", "1", field["keep"], id: "keep_#{name}" %> <%= label_tag "keep_#{name}", "Keep #{name.humanize.downcase}" %></span>
-        <% if %w[summary notes endnotes].include?(name) %>
-          <%= render "rich_text_field", name: "selection[scalars][#{name}][value]", value: field["value"], field_id: "scalar_#{name}" %>
-        <% elsif name == "language" %>
-          <%= select_tag "selection[scalars][#{name}][value]", options_for_select((@languages + [field["value"]]).compact.uniq, field["value"]), id: "scalar_#{name}" %>
-        <% else %>
-          <%= text_field_tag "selection[scalars][#{name}][value]", field["value"], id: "scalar_#{name}" %>
-        <% end %>
-        <% if %w[title language].include?(name) %>
-          <p><%= label_tag "replacement_#{name}", "Local #{name} if source removed (required when unchecked)" %>
-          <% if name == "language" %><%= select_tag "selection[scalars][#{name}][replacement]", options_for_select(@languages, field["replacement"]), include_blank: "Choose a local language", id: "replacement_#{name}" %>
-          <% else %><%= text_field_tag "selection[scalars][#{name}][replacement]", field["replacement"], id: "replacement_#{name}" %><% end %></p>
-        <% end %>
-        <details><summary>Fetched source value</summary><pre><%= @snapshot.manifest.dig("scalars", name).presence || "Absent" %></pre></details>
-        <% if name == "expected_chapters" %><p class="muted">Leave blank for an unknown final total. This does not change the published chapter bodies.</p><% end %>
-        <% if name == "series" %><p class="muted">Series attribution is review metadata. No local series will be created in this milestone.</p><% end %>
-      </div>
-    <% end %>
-  </fieldset>
-  <fieldset>
-    <legend>Tags and author attribution</legend>
+  <fieldset class="tags" role="article" id="magic-tags">
+    <legend>Tags</legend>
+    <h3 class="landmark heading">Tags</h3>
     <p class="muted">Author tags come first. Existing local tags start selected; new tags start unchecked. Ratings and warnings start unchecked even if they exist locally. Renaming preserves your keep choice.</p>
     <div class="toolbar">
       <%= label_tag :magic_tag_search, "Find tags" %><%= search_field_tag nil, nil, id: "magic_tag_search", placeholder: "Search names" %>
@@ -36,18 +12,53 @@
       <button type="button" id="magic-select-visible">Select visible</button><button type="button" id="magic-clear-visible">Clear visible</button>
     </div>
     <% fetched_tags = @snapshot.manifest["authors"].map { |name| { "name" => name, "type" => "Freeform" } } + @snapshot.manifest["tags"] %>
-    <ul class="tag-candidates">
-      <% @selection["tags"].each do |tag| %>
+    <% tag_groups = [["Source authors", "author"], ["Rating", "Rating"], ["Archive Warnings", "ArchiveWarning"], ["Fandoms", "Fandom"], ["Categories", "Category"], ["Relationships", "Relationship"], ["Characters", "Character"], ["Additional Tags", "Freeform"]] %>
+    <% tag_groups.each do |heading, type| %>
+      <section class="magic-tag-group" data-tag-group="<%= type %>">
+        <h4 class="heading"><%= heading %></h4>
+        <% candidates = @selection["tags"].select { |tag| type == "author" ? tag["author"] : !tag["author"] && tag["type"] == type } %>
+        <% if candidates.empty? %><p class="muted">None fetched.</p><% end %>
+        <ul class="tag-candidates">
+      <% candidates.each do |tag| %>
         <li class="tag-candidate <%= 'author' if tag['author'] %>" data-type="<%= tag['type'] %>">
           <span><%= hidden_field_tag "selection[tags][#{tag['id']}][id]", tag["id"], id: nil %><%= hidden_field_tag "selection[tags][#{tag['id']}][keep]", "0", id: nil %><%= check_box_tag "selection[tags][#{tag['id']}][keep]", "1", tag["keep"], id: "tag_keep_#{tag['id']}", aria: { label: "Keep #{tag['type']} #{tag['name']}" } %></span>
           <span><%= label_tag "tag_name_#{tag['id']}", "#{tag['author'] ? 'Author · ' : ''}#{tag['type']}" %><%= text_field_tag "selection[tags][#{tag['id']}][name]", tag["name"], id: "tag_name_#{tag['id']}" %><br><span class="muted">Fetched: <%= fetched_tags.fetch(tag["id"].to_i)["name"] %></span></span>
           <span class="tag-status"><span class="badge"><%= tag["status"] == "new" ? "New tag" : tag["status"].humanize %></span><% if tag["author"] %><span class="badge">Author first</span><% end %><br><span class="muted"><% if tag["local_id"] %>Local <%= tag["local_type"] %> #<%= tag["local_id"] %>: <%= tag["local_name"] %><% elsif tag["local_type"] %>Name belongs to <%= tag["local_type"] %>. Edit or remove this choice.<% else %>Will create a tag if selected in a future save.<% end %></span></span>
         </li>
       <% end %>
-    </ul>
+        </ul>
+      </section>
+    <% end %>
   </fieldset>
-  <fieldset>
-    <legend>Published chapter structure</legend>
+  <fieldset class="preface" role="article" id="magic-preface">
+    <legend>Preface</legend>
+    <h3 class="landmark heading">Preface</h3>
+    <p class="note">Edit the proposed values or uncheck a field to omit it. A title and language require a local replacement when unchecked.</p>
+    <p class="note">Source authors are reviewed as author tags above. The local account's byline is not selected in this review.</p>
+    <dl>
+      <% %w[title summary notes endnotes].each do |name| %>
+        <%= render "scalar_field", name: name, field: @selection["scalars"].fetch(name) %>
+      <% end %>
+    </dl>
+  </fieldset>
+  <fieldset id="magic-associations" role="article">
+    <legend>Associations</legend>
+    <h3 class="landmark heading">Associations</h3>
+    <p class="note">Collections, gifts, related works, and work skins are not configured in this review. Series is source attribution only; no local series is created.</p>
+    <dl>
+      <% %w[series expected_chapters published_at language status_date status_label source_attribution].each do |name| %>
+        <%= render "scalar_field", name: name, field: @selection["scalars"].fetch(name) %>
+      <% end %>
+    </dl>
+  </fieldset>
+  <fieldset class="privacy" role="article" id="magic-privacy">
+    <legend>Privacy</legend>
+    <h3 class="landmark heading">Privacy</h3>
+    <p class="note">Visibility and commenting permissions are not configured in this review. No work is posted or saved.</p>
+  </fieldset>
+  <fieldset class="work text" role="article" id="magic-work-text">
+    <legend>Work Text</legend>
+    <h3 class="landmark heading">Work Text</h3>
     <p class="muted">All published bodies stay in source order. Chapter identifiers are technical source identities. Titles, summaries, and notes remain independent choices.</p>
     <% @selection["chapters"].each do |chapter| %>
       <div class="chapter">

@@ -127,6 +127,21 @@ RSpec.describe "Magic Import browser review", type: :feature do
     inspection.click_button "Collapse chapter 1 body"
     expect(page.evaluate_script("arguments[0].open", inspection)).to eq(false)
     expect(page.evaluate_script("document.activeElement === document.querySelector('#inspect-chapter-1 > summary')")).to eq(true)
+    expect(page.all("#magic-selection-form > fieldset").map { |section| section.find("legend").text }).to eq(["Tags", "Preface", "Associations", "Privacy", "Work Text"])
+    within("#magic-preface") { expect(page).to have_field("scalar_title") }
+    within("#magic-associations") do
+      expect(page).to have_field("scalar_expected_chapters")
+      expect(page).to have_field("scalar_language")
+      expect(page).to have_content("no local series is created")
+    end
+    within("#magic-privacy") { expect(page).to have_content("not configured") }
+    within("#magic-work-text") { expect(page).to have_css("#inspect-chapter-1") }
+    groups = all("#magic-tags .magic-tag-group")
+    expect(groups.map { |group| group.find("h4").text }).to eq(["Source authors", "Rating", "Archive Warnings", "Fandoms", "Categories", "Relationships", "Characters", "Additional Tags"])
+    expect(find('[data-tag-group="author"]')).to have_css(".tag-candidate.author")
+    expect(find('[data-tag-group="Rating"]')).to have_css('.tag-candidate[data-type="Rating"]')
+    expect(find('[data-tag-group="Fandom"]')).to have_css('.tag-candidate[data-type="Fandom"]', count: 2)
+    original_tag_order = session.reload.selection["tags"].map { |tag| tag["id"] }
     selection = session.reload.selection
     author_id = selection["tags"].find { |tag| tag["author"] }["id"]
     rating_id = selection["tags"].find { |tag| tag["type"] == "Rating" }["id"]
@@ -151,6 +166,8 @@ RSpec.describe "Magic Import browser review", type: :feature do
       expect(page).to have_content("Edited rich notes")
     end
     expect(session.reload.selection_revision).to eq(1)
+    expect(session.selection["tags"].map { |tag| tag["id"] }).to eq(original_tag_order)
+    expect(session.selection["tags"].first["author"]).to eq(true)
     expect(session.selection.dig("scalars", "notes", "value")).to include("Edited rich notes")
     expect(session.selection.dig("scalars", "endnotes", "value")).to include('<b lang="fr">', '<abbr title="meaning" align="right">')
     expect(session.selection.dig("scalars", "summary", "value")).to include("<strong>Edited rich summary</strong>")
