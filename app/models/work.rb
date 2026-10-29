@@ -7,6 +7,7 @@ class Work < ApplicationRecord
   include BookmarkCountCaching
   include WorkChapterCountCaching
   include Creatable
+  include Ao3Backup::ArchivalWork
 
   ########################################################################
   # ASSOCIATIONS
@@ -147,11 +148,11 @@ class Work < ApplicationRecord
   end
 
   validates :fandom_string,
-            presence: { message: "^Please fill in at least one fandom." }
+            presence: { message: "^Please fill in at least one fandom." }, unless: :archival_backup?
   validates :archive_warning_string,
-            presence: { message: "^Please select at least one warning." }
+            presence: { message: "^Please select at least one warning." }, unless: :archival_backup?
   validates :rating_string,
-            presence: { message: "^Please choose a rating." }
+            presence: { message: "^Please choose a rating." }, unless: :archival_backup?
 
   validate :only_one_rating
   def only_one_rating

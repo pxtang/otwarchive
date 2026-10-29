@@ -6,6 +6,8 @@ require "rails/all"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+require_relative "../lib/ao3_backup/engine"
+
 module Otwarchive
   class Application < Rails::Application
     app_config = YAML.safe_load_file(Rails.root.join("config/config.yml"))
@@ -15,7 +17,7 @@ module Otwarchive
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w[assets tasks])
+    config.autoload_lib(ignore: %w[assets tasks ao3_backup])
 
     # Configuration for the application, engines, and railties goes here.
     #

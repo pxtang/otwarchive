@@ -1,0 +1,28 @@
+# Automated tests only. Never combine with docker-compose.restore.yml.
+# docker compose -p otwarchive-magic-import-test -f docker-compose.yml -f docker-compose.magic-import-test.yml ...
+services:
+  db:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  es:
+    ports: !reset []
+  mc:
+    ports: !reset []
+  chrome:
+    ports: !reset []
+  test:
+    image: otwarchive-sandbox-web
+    ports: !reset []
+    volumes:
+      - ./config/docker/database.yml:/otwa/config/database.yml:ro
+      - ./config/docker/redis.yml:/otwa/config/redis.yml:ro
+      - ./config/docker/sandbox-local.yml:/otwa/config/local.yml:ro
+  web:
+    image: otwarchive-sandbox-web
+    ports: !override
+      - "127.0.0.1:3003:3000"
+    volumes:
+      - ./config/docker/database.yml:/otwa/config/database.yml:ro
+      - ./config/docker/redis.yml:/otwa/config/redis.yml:ro
+      - ./config/docker/sandbox-local.yml:/otwa/config/local.yml:ro

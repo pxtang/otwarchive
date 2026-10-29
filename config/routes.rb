@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  mount Ao3Backup::Engine => "/backup_imports", as: :ao3_backup
+
   devise_scope :admin do
     get "admin/logout" => "admin/sessions#confirm_logout"
 
