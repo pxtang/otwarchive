@@ -92,3 +92,62 @@ Fresh isolated schema load plus host/engine migrations passed.
 All commands above run via the isolated project's `exec -T test`. No restore
 container, restored volume, or restored archive SQL was changed. M0 is an internal
 maintainer contract only; fetching/review/save UI remain later milestones.
+
+## M1 contracts and acquisition diagnostic
+
+The engine's services own version 1 manifests and selection payloads:
+`SourceIdentity` normalizes only supported HTTPS AO3 work/chapter URLs;
+`Provider` injects its HTTP client/clock and returns a frozen `CapturedPage` or a
+coded `Error`; `Parser` returns plain values, separate chapter metadata/bodies,
+optional source chapter IDs, full-work completion totals, and remote media URLs.
+It uses the host `HtmlCleaner` sanitizer, resolves safe relative URLs, removes only
+direct chapter landmarks, and rejects oversized text instead of truncating it.
+`LocalTagResolver` performs read-only name queries under the database collation
+and reports cross-type collisions without recategorization. `SelectionPolicy`
+initializes author/existing/new order once and updates explicit choices without
+reapplying defaults. Empty tag choices mean keep none. Proposed output deduplicates
+tags while retaining their reviewed priority. Local title/language replacements
+are explicit; language must exist locally and finite chapter totals cannot be
+smaller than the published body count. Canonical rating/warning/category choices
+must resolve locally before review accepts them.
+
+The shared diagnostic now boots Rails for the existing sanitizer and engine
+loader, but does not write any archive records or retain source HTML:
+
+```sh
+bundle exec rails runner script/docker/check_flaresolverr.rb 'https://archiveofourown.org/works/95623101'
+```
+
+`AO3_FLARESOLVERR_URL` is trusted server configuration, never a form parameter.
+The adapter sends one stateless request (60-second solver timeout, 75-second read
+and 5-second connect limits), streams an 8 MiB maximum API envelope, and accepts
+at most 5 MiB HTML. It rejects browser-internal/cross-work final URLs. Errors
+separate missing work, target forbidden/rate limit/TLS failure, solver HTTP/envelope/
+verification/timeout failures, adult warning and malformed/truncated source layout.
+Retry-After is available on typed errors; no automatic repeated fetch occurs.
+M2 will expose explicit retry as a new generation. Cookies and solver messages
+are never logged or copied into errors.
+
+M1 deterministic checks use four small invented fixtures (1/1, 7/7, 2/?, 10/12),
+with no source story prose. Parser/provider/policy specs cover missing/duplicate
+bodies/IDs, chapter fraction inconsistencies, Unicode typed resolution, explicit
+removals, unsupported URLs, challenge/adult pages and transport/size failures.
+
+Two sequential opt-in live diagnostics passed on 2026-10-28 using only the new
+`otwarchive-magic-import-test-flaresolverr-1` service:
+
+- Source 95623101: `1/1`, one body, absent source chapter ID.
+- Source 95493226 chapter URL: normalized whole work, `2/?`, source IDs 255079676
+  and 255425746, expected typed tag counts.
+
+Both ran via the isolated test container with `RAILS_ENV=development` and
+`AO3_FLARESOLVERR_URL=http://flaresolverr:8191`; no restore service or database was
+used. M2+ automated checks continue to use fixture-backed acquisition.
+
+M1 focused automated command (isolated Compose `exec -T test`):
+`bundle exec rspec spec/ao3_backup` passed **60 examples, 0 failures** before
+the final heading-scope regression. The final focused core run
+`bundle exec rspec spec/ao3_backup/core_spec.rb` passed **49 examples, 0 failures**;
+the unchanged foundation suite had previously passed **12 examples, 0 failures**.
+`git diff --check` passed. Acquisition diagnostics remain read-only developer
+tools; the native inspector is M2, and content saving remains disabled until M3.
