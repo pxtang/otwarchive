@@ -188,6 +188,68 @@ RSpec.describe "Magic Import review requests", type: :request do
     expect(session.reload.selection_revision).to eq(2)
   end
 
+  it "supports the New Work layout and preserves its choices across layouts without content writes" do
+    load Rails.root.join("script/ensure_required_tags.rb")
+    session = ready_session
+    rating = Rating.defaults_by_severity.first
+    warning = ArchiveWarning.canonical.by_name.first
+    expect(rating).to be_present
+    expect(warning).to be_present
+    counts = [Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)
+    get "/backup_imports/import_sessions/#{session.id}?layout=new_work"
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("New Work layout", "Add a fandom", rating.name, warning.name)
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: session.snapshot_digest, layout: "new_work", selection: { scalars: {} }, additional_tags: { Rating: [rating.name], ArchiveWarning: [warning.name], Fandom: ["A review fandom"] }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:found)
+    expect(session.reload.selection["tags"].select { |tag| tag["keep"] }.map { |tag| tag["name"] }).to include(rating.name, warning.name, "A review fandom")
+    get "/backup_imports/import_sessions/#{session.id}"
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("A review fandom")
+    expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(counts)
+  end
+
+  it "requires a rating, warning and fandom on alternate review update" do
+    session = ready_session
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: session.snapshot_digest, layout: "new_work", selection: { scalars: {} }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.body).to include("Choose at least one rating")
+    expect(session.reload.selection_revision).to eq(0)
+  end
+
+  it "preserves multiple ratings and a case-variant local tag when switching layouts" do
+    load Rails.root.join("script/ensure_required_tags.rb")
+    session = ready_session
+    ratings = Rating.defaults_by_severity.compact.first(2)
+    warning = ArchiveWarning.canonical.by_name.first
+    initial = session.selection
+    initial["tags"] += ratings.each_with_index.map { |rating, i| Ao3Backup::LocalTagResolver.new.call("id" => "rating-#{i}", "name" => rating.name, "type" => "Rating", "keep" => true, "author" => false) }
+    initial["tags"] << Ao3Backup::LocalTagResolver.new.call("id" => "case-warning", "name" => warning.name.swapcase, "type" => "ArchiveWarning", "keep" => true, "author" => false)
+    session.update!(selection: initial)
+    get "/backup_imports/import_sessions/#{session.id}?layout=new_work"
+    doc = Nokogiri::HTML5.parse(response.body)
+    expect(doc.at_css('#extra_rating-1[checked]')).to be_present
+    expect(doc.at_css("#choice_#{warning.id}[checked]")).to be_present
+    tags = initial["tags"].map { |tag| tag.slice("id", "name", "keep").merge("keep" => %w[Rating ArchiveWarning].include?(tag["type"]) ? (tag["id"] == "rating-1" ? "1" : "0") : (tag["keep"] ? "1" : "0")) }
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: session.snapshot_digest, layout: "new_work", switch_layout: "review", selection: { tags: tags }, additional_tags: { Rating: [ratings.first.name], ArchiveWarning: [warning.name] }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:found)
+    result = session.reload.selection["tags"]
+    expect(result.select { |tag| tag["type"] == "Rating" && tag["keep"] }.map { |tag| tag["local_id"] }).to include(*ratings.map(&:id))
+    expect(result.find { |tag| tag["id"] == "case-warning" }["keep"]).to be true
+  end
+
+  it "retains rejected edits safely without changing the saved selection or proposed output" do
+    session = ready_session
+    saved = session.selection
+    patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(revision: 0, digest: session.snapshot_digest, layout: "new_work", selection: { scalars: { title: { keep: "0", replacement: "" }, summary: { keep: "1", value: "<p>Edited summary</p><script>bad()</script>" } } }), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "text/html" }
+    expect(response).to have_http_status(:unprocessable_entity)
+    doc = Nokogiri::HTML5.parse(response.body)
+    expect(doc.at_css('#scalar_summary').text).to include('Edited summary')
+    expect(doc.at_css('#scalar_summary').text).not_to include('<script>')
+    expect(doc.at_css('#keep_title')).not_to have_attribute('checked')
+    expect(doc.at_css('#magic-proposed-output').text).not_to include('Edited summary')
+    expect(session.reload.selection).to eq(saved)
+  end
+
   it "preserves allowed rich formatting and strips unsafe markup in review edits" do
     session = ready_session
     patch "/backup_imports/import_sessions/#{session.id}", params: JSON.generate(

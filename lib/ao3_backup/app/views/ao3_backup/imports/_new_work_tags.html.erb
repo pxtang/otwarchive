@@ -1,0 +1,65 @@
+<fieldset class="work meta" role="article" id="magic-tags">
+  <legend>Tags</legend>
+  <h3 class="landmark heading">Tags</h3>
+  <p class="required notice">* Required information for this layout. Select choices and update the review; no archive content is saved.</p>
+  <dl>
+    <% [["Rating", "Rating"], ["Archive Warnings", "ArchiveWarning"], ["Categories", "Category"]].each do |label, type| %>
+      <% candidates = @selection["tags"].select { |tag| tag["type"] == type } %>
+      <% choices = type == "Rating" ? Rating.defaults_by_severity.compact.select(&:canonical?) : type == "Category" ? Category.canonical.by_name.sort : ArchiveWarning.canonical.by_name.to_a %>
+      <% selected = candidates.select { |tag| tag["keep"] } %>
+      <% represented = []; extras = [] %>
+      <% selected.each do |tag| %>
+        <% if choices.any? { |choice| choice.id == tag['local_id'] } && represented.none? { |other| other['local_id'] == tag['local_id'] } && (type != 'Rating' || represented.empty?) %>
+          <% represented << tag %>
+        <% else %>
+          <% extras << tag %>
+        <% end %>
+      <% end %>
+      <% required = type != 'Category' %>
+      <dt class="<%= type == 'Rating' ? 'rating' : type == 'Category' ? 'category' : 'warning' %><%= ' required' if required %>">
+        <% if type == 'Rating' %><%= label_tag 'new_work_Rating', 'Rating*' %><% else %><%= label %><%= '*' if required %><% end %>
+      </dt>
+      <dd class="<%= type == 'Rating' ? 'rating' : type == 'Category' ? 'category' : 'warning' %><%= ' required' if required %>">
+        <% candidates.reject { |tag| Array(@ephemeral_tag_ids).include?(tag['id']) }.each do |tag| %>
+          <%= hidden_field_tag "selection[tags][#{tag['id']}][id]", tag['id'], id: nil %>
+          <%= hidden_field_tag "selection[tags][#{tag['id']}][name]", tag['name'], id: nil %>
+          <%= hidden_field_tag "selection[tags][#{tag['id']}][keep]", '0', id: nil %>
+          <% if extras.include?(tag) %>
+            <%= check_box_tag "selection[tags][#{tag['id']}][keep]", '1', true, id: "extra_#{tag['id']}" %>
+            <%= label_tag "extra_#{tag['id']}", "Keep additional source choice: #{tag['name']}" %>
+          <% end %>
+        <% end %>
+        <% if extras.any? %><p class="notice">These extra source choices are preserved. Resolve them before updating if they conflict with the available local choices.</p><% end %>
+        <% if type == "Rating" %>
+          <%= select_tag "additional_tags[Rating][]", options_for_select(choices.map(&:name), choices.find { |choice| choice.id == represented.first&.dig('local_id') }&.name), include_blank: "Choose a rating", id: "new_work_Rating" %>
+        <% else %>
+          <fieldset><legend class="landmark"><%= label %><%= '*' if required %></legend><ul>
+            <% choices.each do |choice| %>
+              <li><%= check_box_tag "additional_tags[#{type}][]", choice.name, represented.any? { |tag| tag['local_id'] == choice.id }, id: "choice_#{choice.id}" %> <%= label_tag "choice_#{choice.id}", choice.name %></li>
+            <% end %>
+          </ul></fieldset>
+        <% end %>
+      </dd>
+    <% end %>
+    <% [["Fandoms*", "Fandom"], ["Relationships", "Relationship"], ["Characters", "Character"], ["Additional Tags", "Freeform"]].each do |heading, type| %>
+      <dt><%= heading %></dt>
+      <dd>
+        <% candidates = @selection["tags"].select { |tag| tag["type"] == type } %>
+        <% candidates.reject { |tag| Array(@ephemeral_tag_ids).include?(tag['id']) }.each do |tag| %>
+          <div class="field">
+            <%= hidden_field_tag "selection[tags][#{tag['id']}][id]", tag['id'], id: nil %>
+            <%= hidden_field_tag "selection[tags][#{tag['id']}][keep]", '0', id: nil %>
+            <%= check_box_tag "selection[tags][#{tag['id']}][keep]", '1', tag['keep'], id: "tag_keep_#{tag['id']}" %>
+            <%= label_tag "tag_keep_#{tag['id']}", tag['author'] ? 'Keep source author tag (first)' : "Keep #{type}" %>
+            <%= label_tag "tag_name_#{tag['id']}", "#{tag['author'] ? 'Source author' : type} name", class: 'landmark' %>
+            <%= text_field_tag "selection[tags][#{tag['id']}][name]", tag['name'], id: "tag_name_#{tag['id']}" %>
+            <span class="muted"><%= tag['status'].humanize %></span>
+          </div>
+        <% end %>
+        <% if type == 'Fandom' %>
+          <p><%= label_tag 'new_fandom', 'Add a fandom' %> <%= text_field_tag 'additional_tags[Fandom][]', candidates.find { |tag| Array(@ephemeral_tag_ids).include?(tag['id']) }&.fetch('name'), id: 'new_fandom' %></p>
+        <% end %>
+      </dd>
+    <% end %>
+  </dl>
+</fieldset>

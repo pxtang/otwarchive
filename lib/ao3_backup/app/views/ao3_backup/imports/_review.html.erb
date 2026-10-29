@@ -2,6 +2,15 @@
 <%= form_tag import_session_path(@import_session), method: :patch, class: "verbose post work", id: "magic-selection-form" do %>
   <%= hidden_field_tag :revision, @import_session.selection_revision %>
   <%= hidden_field_tag :digest, @import_session.snapshot_digest %>
+  <%= hidden_field_tag :layout, params[:layout] == "new_work" ? "new_work" : "review" %>
+  <nav aria-label="Review layout" class="actions">
+    <button type="submit" name="switch_layout" value="review" formnovalidate>Current review</button>
+    <button type="submit" name="switch_layout" value="new_work" formnovalidate>New Work layout</button>
+    <span>Switching saves your review choices.</span>
+  </nav>
+  <% if params[:layout] == "new_work" %>
+    <%= render "new_work_tags" %>
+  <% else %>
   <fieldset class="tags" role="article" id="magic-tags">
     <legend>Tags</legend>
     <h3 class="landmark heading">Tags</h3>
@@ -22,7 +31,7 @@
       <% candidates.each do |tag| %>
         <li class="tag-candidate <%= 'author' if tag['author'] %>" data-type="<%= tag['type'] %>">
           <span><%= hidden_field_tag "selection[tags][#{tag['id']}][id]", tag["id"], id: nil %><%= hidden_field_tag "selection[tags][#{tag['id']}][keep]", "0", id: nil %><%= check_box_tag "selection[tags][#{tag['id']}][keep]", "1", tag["keep"], id: "tag_keep_#{tag['id']}", aria: { label: "Keep #{tag['type']} #{tag['name']}" } %></span>
-          <span><%= label_tag "tag_name_#{tag['id']}", "#{tag['author'] ? 'Author · ' : ''}#{tag['type']}" %><%= text_field_tag "selection[tags][#{tag['id']}][name]", tag["name"], id: "tag_name_#{tag['id']}" %><br><span class="muted">Fetched: <%= fetched_tags.fetch(tag["id"].to_i)["name"] %></span></span>
+          <span><%= label_tag "tag_name_#{tag['id']}", "#{tag['author'] ? 'Author · ' : ''}#{tag['type']}" %><%= text_field_tag "selection[tags][#{tag['id']}][name]", tag["name"], id: "tag_name_#{tag['id']}" %><br><span class="muted">Fetched: <%= tag["id"].start_with?("added-") ? "Added during review" : fetched_tags.fetch(tag["id"].to_i)["name"] %></span></span>
           <span class="tag-status"><span class="badge"><%= tag["status"] == "new" ? "New tag" : tag["status"].humanize %></span><% if tag["author"] %><span class="badge">Author first</span><% end %><br><span class="muted"><% if tag["local_id"] %>Local <%= tag["local_type"] %> #<%= tag["local_id"] %>: <%= tag["local_name"] %><% elsif tag["local_type"] %>Name belongs to <%= tag["local_type"] %>. Edit or remove this choice.<% else %>Will create a tag if selected in a future save.<% end %></span></span>
         </li>
       <% end %>
@@ -30,6 +39,7 @@
       </section>
     <% end %>
   </fieldset>
+  <% end %>
   <fieldset class="preface" role="article" id="magic-preface">
     <legend>Preface</legend>
     <h3 class="landmark heading">Preface</h3>
@@ -118,6 +128,7 @@
     var query = search.value.toLocaleLowerCase();
     rows.forEach(function (row) { row.hidden = (type.value && row.dataset.type !== type.value) || row.querySelector('input[type=text]').value.toLocaleLowerCase().indexOf(query) < 0; });
   }
+  if (!search || !type) return;
   search.addEventListener('input', filter); type.addEventListener('change', filter);
   document.getElementById('magic-select-visible').addEventListener('click', function () { rows.filter(function (row) { return !row.hidden; }).forEach(function (row) { row.querySelector('input[type=checkbox]').checked = true; }); });
   document.getElementById('magic-clear-visible').addEventListener('click', function () { rows.filter(function (row) { return !row.hidden; }).forEach(function (row) { row.querySelector('input[type=checkbox]').checked = false; }); });

@@ -27,7 +27,7 @@ module Ao3Backup
         raise Error.new(:invalid_selection, "Selection edits must be structured metadata fields.")
       end
       result = JSON.parse(JSON.generate(current))
-      raise Error.new(:invalid_selection, "Unknown selection fields.") unless (edits.keys - %w[scalars chapters tags]).empty?
+      raise Error.new(:invalid_selection, "Unknown selection fields.") unless (edits.keys - %w[scalars chapters tags additional_tags required_tags]).empty?
       edits.fetch("scalars", {}).each do |name, edit|
         raise Error.new(:invalid_selection, "Unknown metadata field.") unless result["scalars"].key?(name)
         result["scalars"][name] = checked_field(edit, result["scalars"][name], name)
@@ -54,6 +54,31 @@ module Ao3Backup
         end
         # Submitted order cannot move author attribution below other tags.
         result["tags"].sort_by! { |tag| current["tags"].index { |old| old["id"] == tag["id"] } }
+      end
+      if edits.key?("additional_tags")
+        additions = edits["additional_tags"]
+        raise Error.new(:invalid_selection, "Invalid additional tag choices.") unless additions.is_a?(Hash) && (additions.keys - %w[Rating ArchiveWarning Category Fandom]).empty?
+        additions.each do |type, values|
+          raise Error.new(:invalid_selection, "Invalid additional tag choices.") unless values.is_a?(Array) && values.all? { |value| value.is_a?(String) }
+          values = values.reject(&:blank?).map(&:strip).uniq
+          values.each do |name|
+            raise Error.new(:invalid_selection, "Tag name is too long.") if name.length > ArchiveConfig.TAG_MAX
+            resolved = @resolver.call("type" => type, "name" => name)
+            existing = result["tags"].find { |tag| tag["type"] == type && ((resolved["local_id"] && tag["local_id"] == resolved["local_id"]) || tag["name"].casecmp?(name)) }
+            if existing
+              existing["keep"] = true
+            else
+              id = "added-#{SecureRandom.uuid}"
+              result["tags"] << @resolver.call("id" => id, "type" => type, "name" => name, "author" => false, "keep" => true)
+            end
+          end
+        end
+      end
+      if edits["required_tags"]
+        %w[Rating ArchiveWarning Fandom].each do |type|
+          raise Error.new(:invalid_selection, "Choose at least one #{type == 'ArchiveWarning' ? 'archive warning' : type.downcase}.") unless result["tags"].any? { |tag| tag["type"] == type && tag["keep"] }
+        end
+        raise Error.new(:invalid_selection, "Choose only one rating.") if result["tags"].count { |tag| tag["type"] == "Rating" && tag["keep"] } > 1
       end
       edits.fetch("chapters", {}).each do |position, fields|
         chapter = result["chapters"].find { |item| item["position"].to_s == position.to_s }
@@ -103,6 +128,10 @@ module Ao3Backup
         "chapters" => selection.fetch("chapters").map do |chapter|
           chapter.slice("position", "source_chapter_id", "content").merge(chapter.fetch("fields").transform_values { |field| field["keep"] ? field["value"] : nil })
         end }
+    end
+
+    def safe_display_value(name, value)
+      sanitize_value(name, value)
     end
 
     private
