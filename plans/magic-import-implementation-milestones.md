@@ -1,5 +1,7 @@
 # Magic Import work: build order, test boundaries, and usable milestones
 
+**Current retention override:** Keep cached snapshots indefinitely, including after completion, cancellation, or retry. Only explicit deletion removes them. No automatic expiry or cleanup until the owner changes this instruction. Earlier expiry/cleanup requirements below are superseded.
+
 This is the execution sequence for [the feature plan](ao3-selective-backup-import.md).
 That plan remains the source of product requirements and verified AO3 examples.
 Each milestone below has an observable capability and a completion gate. These

@@ -12,7 +12,7 @@
       <% if @import_session.dispatch_pending %><%= button_to "Try dispatch again", recover_dispatch_import_session_path(@import_session) %><% end %>
     </div>
   <% elsif @import_session.state == "ready" %>
-    <p class="muted">Snapshot captured <%= @snapshot.retrieved_at.utc.strftime("%Y-%m-%d %H:%M UTC") %> · <%= @snapshot.manifest["published_chapters"] %> published chapters · Review revision <%= @import_session.selection_revision %> · Expires <%= @import_session.expires_at.utc.strftime("%Y-%m-%d %H:%M UTC") %></p>
+    <p class="muted">Snapshot captured <%= @snapshot.retrieved_at.utc.strftime("%Y-%m-%d %H:%M UTC") %> · <%= @snapshot.manifest["published_chapters"] %> published chapters · Review revision <%= @import_session.selection_revision %> · Retained until deleted</p>
     <p class="muted">Fetched completion: <%= @snapshot.manifest["complete"] ? "Complete" : "Incomplete" %> (<%= @snapshot.manifest["published_chapters"] %>/<%= @snapshot.manifest.dig("scalars", "expected_chapters") || "?" %>) · Source word count: <%= @snapshot.manifest["source_word_count"] || "Not provided" %>. Local word counts will be computed from the selected content in a future save.</p>
     <%= render "review" %>
   <% elsif @import_session.state == "fetch_failed" %>
@@ -21,7 +21,7 @@
     <% if @import_session.retry_not_before %><p>Upstream asks you to wait until <%= @import_session.retry_not_before.utc.strftime("%Y-%m-%d %H:%M:%S UTC") %> before retrying.</p><% end %>
   <% else %>
     <h3 class="heading">Review <%= @import_session.state %></h3>
-    <p>Temporary source data and choices have been removed. Start another review to inspect this work again.</p>
+    <p>This review is no longer active. Cached snapshots remain until you delete the review.</p>
   <% end %>
   <% unless %w[expired cancelled].include?(@import_session.state) %>
     <div class="toolbar">

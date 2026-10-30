@@ -7,7 +7,7 @@ module Ao3Backup
     belongs_to :owner, class_name: "User"
     has_many :snapshots, dependent: :delete_all, inverse_of: :import_session
     validates :state, inclusion: { in: STATES }
-    validates :source_host, :source_work_id, :canonical_url, :expires_at, presence: true
+    validates :source_host, :source_work_id, :canonical_url, presence: true
 
     def current_snapshot
       snapshots.find_by(generation: generation, digest: snapshot_digest)

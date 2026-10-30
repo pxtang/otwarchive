@@ -10,7 +10,7 @@
         <dt><%= label_tag :source_url, "AO3 work or chapter URL" %></dt>
         <dd><%= url_field_tag :source_url, params[:source_url], required: true, placeholder: "https://archiveofourown.org/works/…", size: 70 %></dd>
       </dl>
-      <p class="muted">Fetching runs in the background. You can review the same snapshot without fetching it again. New reviews expire one week after creation.</p>
+      <p class="muted">Fetching runs in the background. Cached snapshots are retained until you delete the review.</p>
       <p class="submit actions"><%= submit_tag "Fetch and inspect" %></p>
     </fieldset>
   <% end %>
@@ -19,11 +19,11 @@
     <ul class="index group">
       <% @sessions.each do |session| %>
         <li>
-          <% if session.state == "ready" && session.expires_at > Time.current && session.selection.is_a?(Hash) && (snapshot = session.current_snapshot) %>
+          <% if session.state == "ready" && session.selection.is_a?(Hash) && (snapshot = session.current_snapshot) %>
             <% title_field = session.selection.dig("scalars", "title") || {} %>
             <% title = title_field["keep"] ? title_field["value"] : title_field["replacement"] %>
             <% authors = Array(snapshot.manifest["authors"]).join(", ") %>
-            <%= link_to truncate(title.presence || "AO3 work #{session.source_work_id}", length: 80), import_session_path(session) %><% if authors.present? %> — Source author<%= "s" if snapshot.manifest["authors"].size != 1 %>: <%= truncate(authors, length: 60) %><% end %>
+            <%= link_to truncate(title.presence || "AO3 work #{session.source_work_id}", length: 80), import_session_path(session) %><% if authors.present? %> — Author<%= "s" if snapshot.manifest["authors"].size != 1 %>: <%= truncate(authors, length: 60) %><% end %><% if title.present? %> — AO3 work <%= session.source_work_id %><% end %>
           <% else %>
             <%= link_to "AO3 work #{session.source_work_id}", import_session_path(session) %>
           <% end %>

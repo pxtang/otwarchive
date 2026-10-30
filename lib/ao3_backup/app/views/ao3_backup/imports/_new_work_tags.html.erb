@@ -33,7 +33,7 @@
         <% if type == "Rating" %>
           <%= select_tag "additional_tags[Rating][]", options_for_select(choices.map(&:name), choices.find { |choice| choice.id == represented.first&.dig('local_id') }&.name), include_blank: "Choose a rating", id: "new_work_Rating" %>
         <% else %>
-          <fieldset><legend class="landmark"><%= label %><%= '*' if required %></legend><ul>
+          <fieldset aria-label="<%= label %><%= '*' if required %>"><ul>
             <% choices.each do |choice| %>
               <li><%= check_box_tag "additional_tags[#{type}][]", choice.name, represented.any? { |tag| tag['local_id'] == choice.id }, id: "choice_#{choice.id}" %> <%= label_tag "choice_#{choice.id}", choice.name %></li>
             <% end %>

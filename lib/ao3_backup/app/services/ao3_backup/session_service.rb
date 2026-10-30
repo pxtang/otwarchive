@@ -1,6 +1,5 @@
 module Ao3Backup
   class SessionService
-    TTL = 1.week
     MAX_GENERATIONS = 3
 
     def initialize(clock: -> { Time.current }, dispatcher: ->(id, generation) { Resque.enqueue(FetchJob, id, generation) }, policy: SelectionPolicy.new)
@@ -9,7 +8,7 @@ module Ao3Backup
 
     def start(owner:, url:)
       identity = SourceIdentity.parse(url)
-      session = ImportSession.create!(identity.to_h.merge(owner: owner, expires_at: @clock.call + TTL))
+      session = ImportSession.create!(identity.to_h.merge(owner: owner, expires_at: nil))
       dispatch(session)
       session.reload
     end
@@ -34,17 +33,12 @@ module Ao3Backup
     end
 
     def expire(session)
-      session.with_lock do
-        if @clock.call >= session.expires_at && !%w[expired cancelled].include?(session.state)
-          clear_source(session, "expired")
-        end
-      end
       session
     end
 
     def cancel(session)
       session.with_lock do
-        clear_source(session, "cancelled") unless %w[expired cancelled].include?(session.state)
+        session.update!(state: "cancelled", dispatch_pending: false) unless %w[expired cancelled].include?(session.state)
       end
       session
     end
@@ -57,7 +51,6 @@ module Ao3Backup
           raise Error.new(:retry_later, "The source requested a wait before retrying. Try after #{session.retry_not_before.utc.iso8601}.")
         end
         raise Error.new(:retry_limit, "This review has reached its three fetch attempts. Start a new review later.") if session.generation >= MAX_GENERATIONS
-        session.snapshots.delete_all
         session.update!(generation: session.generation + 1, state: "queued", dispatch_pending: true,
                         snapshot_digest: nil, selection: nil, selection_revision: 0,
                         error_code: nil, error_message: nil, retry_after: nil, retry_not_before: nil)
@@ -80,12 +73,5 @@ module Ao3Backup
       session
     end
 
-    private
-
-    def clear_source(session, state)
-      session.snapshots.delete_all
-      session.update!(state: state, selection: nil, snapshot_digest: nil, dispatch_pending: false,
-                      error_code: nil, error_message: nil, retry_after: nil, retry_not_before: nil)
-    end
   end
 end

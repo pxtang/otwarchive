@@ -126,14 +126,23 @@ RSpec.describe "Magic Import review lifecycle" do
     expect(cancelled.reload.expires_at).to eq(old_cancelled)
   end
 
-  it "sets a one-week expiry for new sessions using the injected clock" do
-    expect(session.expires_at).to eq(now + 1.week)
+  it "retains snapshots and choices beyond the former expiry boundary" do
+    expect(session.expires_at).to be_nil
     job.call(session.id, 1)
-    Ao3Backup::SessionService.new(clock: -> { now + 1.week - 1.second }).expire(session)
+    original = session.reload.current_snapshot.manifest
+    Ao3Backup::SessionService.new(clock: -> { now + 100.years }).expire(session)
     expect(session.reload.state).to eq("ready")
-    Ao3Backup::SessionService.new(clock: -> { now + 1.week }).expire(session)
-    expect(session.reload.state).to eq("expired")
-    expect(session.snapshots.count).to eq(0)
+    expect(session.current_snapshot.manifest).to eq(original)
+    expect(session.selection).to be_present
+  end
+
+  it "retains previous snapshots when fetching a new generation" do
+    job.call(session.id, 1)
+    old_snapshot = session.reload.current_snapshot
+    service.retry_fetch(session)
+    Ao3Backup::FetchJob.new(provider: provider, clock: clock).call(session.id, 2)
+    expect(session.reload.state).to eq("ready")
+    expect(session.snapshots.order(:generation).pluck(:id)).to include(old_snapshot.id, session.current_snapshot.id)
   end
 
   it "ignores deleted queued and in-flight jobs, including failed fetches" do
@@ -167,22 +176,12 @@ RSpec.describe "Magic Import review lifecycle" do
     end
   end
 
-  it "expires at the injected boundary and removes temporary snapshot and choices" do
+  it "retains a cached snapshot when the review is cancelled" do
     job.call(session.id, 1)
-    expiry = Ao3Backup::SessionService.new(clock: -> { session.expires_at })
-    expiry.expire(session)
-    expect(session.reload).to have_attributes(state: "expired", selection: nil, snapshot_digest: nil)
-    expect(session.snapshots.count).to eq(0)
-    expect { expiry.update_selection(session, revision: 0, digest: captured.digest, edits: {}) }.to raise_error(Ao3Backup::Error)
-  end
-
-  it "discards a fetch that crosses its expiration time" do
-    session
-    ticks = [now, session.expires_at, session.expires_at, session.expires_at]
-    crossing_clock = -> { ticks.shift || session.expires_at }
-    Ao3Backup::FetchJob.new(provider: provider, clock: crossing_clock).call(session.id, 1)
-    expect(session.reload).to have_attributes(state: "expired", selection: nil)
-    expect(session.snapshots.count).to eq(0)
+    service.cancel(session)
+    expect(session.reload.state).to eq("cancelled")
+    expect(session.snapshots.count).to eq(1)
+    expect(session.selection).to be_present
   end
 
   it "records useful typed errors, restores current user, and bounds explicit fetch retries" do
@@ -373,16 +372,15 @@ RSpec.describe "Magic Import review requests", type: :request do
     expect([Work, Chapter, Tag, Tagging, Creatorship, Series].map(&:count)).to eq(before_counts)
   end
 
-  it "shows ready titles and authors, and clears expired details before listing" do
+  it "shows ready titles and authors even after a legacy expiry date" do
     session = ready_session
     get "/backup_imports"
-    expect(response.body).to include("Source author", "Invented_Author", session.selection.dig("scalars", "title", "value"))
+    expect(response.body).to include("Author", "Invented_Author", "AO3 work #{session.source_work_id}", session.selection.dig("scalars", "title", "value"))
     session.update!(expires_at: 1.second.ago)
     get "/backup_imports"
-    expect(response.body).not_to include("Invented_Author")
-    expect(response.body).to include("Expired", "AO3 work #{session.source_work_id}")
-    expect(session.reload.selection).to be_nil
-    expect(session.snapshots.count).to eq(0)
+    expect(response.body).to include("Invented_Author", "AO3 work #{session.source_work_id}")
+    expect(session.reload.selection).to be_present
+    expect(session.snapshots.count).to eq(1)
   end
 
   it "deletes only the owner's review and its temporary data" do

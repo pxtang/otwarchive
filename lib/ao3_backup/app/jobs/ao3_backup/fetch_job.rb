@@ -29,11 +29,9 @@ module Ao3Backup
         manifest = @parser.call(page)
         selection = @policy.initial(manifest)
         session.with_lock do
-          if session.generation == generation && session.state == "fetching" && @clock.call < session.expires_at
+          if session.generation == generation && session.state == "fetching"
             session.snapshots.create!(generation: generation, digest: page.digest, manifest: manifest, retrieved_at: page.retrieved_at)
             session.update!(state: "ready", snapshot_digest: page.digest, selection: selection, selection_revision: 0)
-          elsif @clock.call >= session.expires_at
-            SessionService.new(clock: @clock).expire(session)
           end
         end
       end

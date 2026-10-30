@@ -1,5 +1,7 @@
 # Selective backup import from public AO3
 
+**Current retention override:** Keep cached snapshots indefinitely, including after completion, cancellation, or retry. Only explicit deletion removes them. No automatic expiry or cleanup until the owner changes this instruction. Earlier expiry/cleanup requirements below are superseded.
+
 ## Current requirements and defaults
 
 Build a **new import UI inside the self-hosted Rails archive**, using the archive's

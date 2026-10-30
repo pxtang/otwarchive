@@ -179,10 +179,10 @@ queued with dispatch intent before Redis is contacted. Failure stays visibly
 queued and offers “Try dispatch again”. Fetch jobs use the existing `utilities`
 queue with only session ID and generation. Each delivery claims queued → fetching
 under a short lock, releases it before solver I/O, and accepts the result only if
-state/generation/expiry still match. Duplicate deliveries and late generations
-cannot overwrite cancellation, retry, expiry or a ready review. A snapshot is
+state and generation still match. Duplicate deliveries and late generations
+cannot overwrite cancellation, retry or a ready review. A snapshot is
 immutable; selection revisions update separately under owner/revision/digest checks.
-Retry creates a new generation and discards the old temporary review; at most
+Retry creates a new generation and retains prior snapshots; at most
 three generations are allowed per session, and Retry-After is honored with an
 injected-clock timestamp. User.current_user is restored on every worker exit.
 
@@ -195,11 +195,13 @@ The exact proposed output uses only retained local values and shows externally
 hosted media, source completion and source word count as source context. The Save
 button is disabled, with a prominent review-only notice.
 
-Reviews expire one week after creation. The expiry migration extends still-active reviews to one week from creation; it does not revive expired or cancelled reviews. The Recent reviews list shows the saved title and source authors for ready, unexpired reviews, and offers a confirmation dialog to delete each review and its temporary data, with a confirmation page when JavaScript is unavailable. Access/worker expiry and cancellation
-remove snapshots and editable choices. M4's scheduled sweeping and worker-death
-lease recovery are deferred; an abandoned fetching generation can already be
-explicitly retried/cancelled. M3 will add content saving/publication. No M3 work
-is enabled by this UI.
+Cached snapshots and review selections have no automatic expiry for now. Existing
+sessions have their expiry cleared by an additive migration. Cancellation retains
+cached snapshots; refetch creates a new generation without deleting earlier ones.
+Explicit deletion removes the review and its snapshots. Future completion must not
+remove cached snapshots. Previously deleted or expired snapshots cannot be restored
+by this change. The Recent reviews list shows the saved title and source authors.
+
 
 M2 validation (all via isolated Compose `exec -T test`):
 
